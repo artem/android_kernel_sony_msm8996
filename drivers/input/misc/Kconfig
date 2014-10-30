@@ -114,6 +114,15 @@ config HBTP_INPUT_SECURE_TOUCH
 	  Say Y to enable this functionality.
 	  If unsure, say N.
 
+config INPUT_BU520X1NVX
+	tristate "BU520X1NVX driver support"
+	default n
+	help
+	  Say Y here
+	  if you want to
+	  support BU520X1NVX
+	  as bipolar detection device.
+
 config INPUT_PCSPKR
 	tristate "PC Speaker support"
 	depends on PCSPKR_PLATFORM
