@@ -251,9 +251,8 @@ void trigger_cpu_pwr_stats_calc(void)
 				pr_err("msm-core: The sensor reported invalid data!");
 				temp = DEFAULT_TEMP;
 			}
+			cpu_node->temp = temp / scaling_factor;
 		}
-
-		cpu_node->temp = temp / scaling_factor;
 
 		prev_temp[cpu] = cpu_node->temp;
 
@@ -378,7 +377,7 @@ static int update_userspace_power(struct sched_params __user *argp)
 {
 	int i;
 	int ret;
-	int cpu;
+	int cpu = -1;
 	struct cpu_activity_info *node;
 	struct cpu_static_info *sp, *clear_sp;
 	int cpumask, cluster, mpidr;
@@ -401,7 +400,7 @@ static int update_userspace_power(struct sched_params __user *argp)
 		}
 	}
 
-	if (cpu >= num_possible_cpus())
+	if ((cpu < 0) || (cpu >= num_possible_cpus()))
 		return -EINVAL;
 
 	node = &activity[cpu];
@@ -1132,3 +1131,4 @@ static int __init msm_core_init(void)
 	return platform_driver_register(&msm_core_driver);
 }
 late_initcall(msm_core_init);
+
