@@ -91,7 +91,6 @@ obj-$(CONFIG_MSM_SERVICE_NOTIFIER) += service-notifier.o
 obj-$(CONFIG_MSM_SYSMON_COMM) += sysmon.o sysmon-qmi.o
 obj-$(CONFIG_MSM_SECURE_BUFFER) += secure_buffer.o
 obj-$(CONFIG_TRACER_PKT) += tracer_pkt.o
-CFLAGS_tracer_pkt.o := -I$(src)
 obj-$(CONFIG_ICNSS) += icnss.o wlan_firmware_service_v01.o
 obj-$(CONFIG_MSM_BAM_DMUX) += bam_dmux.o
 obj-$(CONFIG_MSM_SERVICE_LOCATOR) += service-locator.o

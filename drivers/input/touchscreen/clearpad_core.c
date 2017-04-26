@@ -748,10 +748,6 @@ struct clearpad_watchdog_t {
 	bool enabled;
 };
 
-struct clearpad_ets_mode_t {
-	bool skip_wakeup_setting;
-};
-
 struct clearpad_noise_detect_t {
 	spinlock_t slock;
 	bool supported;
@@ -851,6 +847,10 @@ struct clearpad_reg_offset_t {
 	u8 f54_query38;
 };
 
+struct clearpad_charger_only_t {
+	unsigned long delay_ms;
+};
+
 enum clearpad_hwtest_data_type_e {
 	HWTEST_NULL,
 	HWTEST_U8,
@@ -927,6 +927,7 @@ struct clearpad_t {
 	struct clearpad_interrupt_t interrupt;
 	struct clearpad_stamina_mode_t stamina;
 	struct clearpad_reg_offset_t reg_offset;
+	struct clearpad_charger_only_t charger_only;
 	int irq;
 	bool irq_enabled;
 	enum clearpad_force_sleep_e force_sleep;
@@ -948,7 +949,6 @@ struct clearpad_t {
 	bool calibrate_on_fwflash;
 	struct device_node *evdt_node;
 	struct clearpad_watchdog_t watchdog;
-	struct clearpad_ets_mode_t ets_mode;
 	spinlock_t slock;
 	bool dev_active;
 	bool dev_busy;
@@ -984,8 +984,6 @@ static bool clearpad_process_noise_det_irq(struct clearpad_t *this);
 static void clearpad_touch_config_dt_for_chip_id(struct clearpad_t *this,
 						int chip_id);
 #ifdef CONFIG_DEBUG_FS
-static void clearpad_analog_test_skip_wakeup_setting(struct clearpad_t *this,
-		const bool enable);
 static int clearpad_debug_hwtest_log(struct clearpad_t *this,
 				     const char *format, ...);
 static void clearpad_debug_info(struct clearpad_t *this);
@@ -2129,11 +2127,6 @@ static int clearpad_enable_wakeup_gesture(struct clearpad_t *this)
 	u8 buf[F12_2D_CTRL_RPT_REG_MAX];
 	int rc = 0;
 
-	if (this->ets_mode.skip_wakeup_setting) {
-		LOGI(this, "Skip enable wakeup gesture process\n");
-		return rc;
-	}
-
 	if (!clearpad_is_valid_function(this, SYN_F12_2D)) {
 		LOGE(this, "F12 is required to set wakeup gesture\n");
 		rc = -EPERM;
@@ -2256,11 +2249,6 @@ static int clearpad_disable_wakeup_gesture(struct clearpad_t *this)
 {
 	u8 buf[F12_2D_CTRL_RPT_REG_MAX];
 	int rc = 0;
-
-	if (this->ets_mode.skip_wakeup_setting) {
-		LOGI(this, "Skip disable wakeup gesture process\n");
-		return rc;
-	}
 
 	if (!clearpad_is_valid_function(this, SYN_F12_2D)) {
 		LOGE(this, "F12 is required to set wakeup gesture\n");
@@ -3080,7 +3068,7 @@ static int clearpad_flash_enable(struct clearpad_t *this)
 	/* issue command to enter bootloader mode with key*/
 	this->flash.enter_bootloader_mode = true;
 	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
-		this->reg_offset.f34_query01),
+		this->reg_offset.f34_data01),
 		buf, sizeof(buf));
 	if (rc) {
 		HWLOGE(this, "failed to enter bootloader mode\n");
@@ -3556,7 +3544,7 @@ static int clearpad_set_resume_mode(struct clearpad_t *this)
 			LOGE(this, "failed to exit sleep mode\n");
 			goto end;
 		}
-		clearpad_set_delay(200);
+		clearpad_set_delay(this->charger_only.delay_ms);
 	}
 
 	this->early_suspend = false;
@@ -3626,7 +3614,7 @@ static int clearpad_set_early_suspend_mode(struct clearpad_t *this)
 			LOGE(this, "failed to exit normal mode\n");
 			goto end;
 		}
-		clearpad_set_delay(200);
+		clearpad_set_delay(this->charger_only.delay_ms);
 	}
 	clearpad_set_irq(this, false);
 	this->early_suspend = true;
@@ -3694,7 +3682,7 @@ static int clearpad_set_suspend_mode(struct clearpad_t *this)
 						   "mode\n");
 					goto end;
 				}
-				clearpad_set_delay(200);
+				clearpad_set_delay(this->charger_only.delay_ms);
 			}
 			clearpad_set_irq(this, false);
 			HWLOGI(this, "enter sleep mode\n");
@@ -6269,6 +6257,11 @@ static void clearpad_touch_config_dt_for_chip_id(struct clearpad_t *this,
 				 &this->interrupt.wait_ms))
 		LOGW(this, "no interrupt_default_wait_ms config\n");
 
+	if (of_property_read_u32(chip_node, "charger_only_delay_ms", &value))
+		LOGW(this, "no charger_only_delay_ms config\n");
+	else
+		this->charger_only.delay_ms = (unsigned long)value;
+
 	if (!this->reg_offset.updated)
 		clearpad_reg_offset_config_dt_for_extra_id(this, chip_node);
 }
@@ -6781,11 +6774,6 @@ static int clearpad_fb_notifier_callback(struct notifier_block *self,
  */
 
 #ifdef CONFIG_DEBUG_FS
-static void clearpad_analog_test_skip_wakeup_setting(struct clearpad_t *this,
-		const bool enable)
-{
-	this->ets_mode.skip_wakeup_setting = enable;
-}
 static int clearpad_debug_hwtest_log(struct clearpad_t *this,
 				     const char *format, ...)
 {
@@ -7961,6 +7949,8 @@ static void clearpad_debug_info(struct clearpad_t *this)
 	HWLOGI(this, "[charger] supported=%s status=%s\n",
 	       this->charger.supported ? "true" : "false",
 	       this->charger.status ? "true" : "false");
+	HWLOGI(this, "[charger only] delay_ms=%lu\n",
+	       this->charger_only.delay_ms);
 	HWLOGI(this, "[stylus] supported=%s enabled=%s\n",
 	       this->pen.supported ? "true" : "false",
 	       this->pen.enabled ? "true" : "false");
@@ -7997,8 +7987,6 @@ static void clearpad_debug_info(struct clearpad_t *this)
 	HWLOGI(this, INDENT "[early unblank] done=%s early_done=%s\n",
 	       this->wakeup.unblank_done ? "true" : "false",
 	       this->wakeup.unblank_early_done ? "true" : "false");
-	HWLOGI(this, "[ets_mode] skip_wakeup_setting=%d\n",
-	       this->ets_mode.skip_wakeup_setting);
 }
 
 static ssize_t clearpad_debug_hwtest_write(struct file *file,
@@ -8010,7 +7998,6 @@ static ssize_t clearpad_debug_hwtest_write(struct file *file,
 	int rc = 0;
 	unsigned long arg;
 	u8 page, reg, value, length, id;
-	bool en;
 	int ms;
 	char *bhead = NULL;
 	char *b;
@@ -8100,15 +8087,6 @@ static ssize_t clearpad_debug_hwtest_write(struct file *file,
 			clearpad_analog_test(this, SYN_F54_ANALOG, reg, value);
 			clearpad_ctrl_session_end(this, session);
 		}
-		break;
-	case DEBUG_COMMAND('A', 'S'):
-		/* AS [1:enable/disable] */
-		/* Skip wakeup gesture setting for analog test in n-yoshino */
-		b += HWTEST_SIZE_OF_COMMAND_PREFIX;
-		if (clearpad_hextou8(this, &b, guard, &value))
-			goto err_invalid_arg;
-		en = (bool)value;
-		clearpad_analog_test_skip_wakeup_setting(this, en);
 		break;
 	case DEBUG_COMMAND('R', 'H'):
 		/* RH/PO - HW reset */

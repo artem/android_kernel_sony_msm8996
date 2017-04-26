@@ -101,6 +101,7 @@ struct camera_read_info {
 	uint32_t			sensor_facing;
 	uint32_t			sensor_config_delay_num;
 	uint32_t			sensor_config_delay[MAX_CONFIG_DELAY_NUM];
+	uint32_t			temperature_check_skip_num;
 	uint32_t			total_pixel_number_w;
 	uint32_t			total_pixel_number_h;
 	uint32_t			active_pixel_number_x;
@@ -349,6 +350,16 @@ static int sony_util_camera_info_init(struct platform_device *pdev, uint16_t id)
 			LOGE("%s failed %d\n", __func__, __LINE__);
 			goto fail;
 		}
+
+		rc = of_property_read_u32(of_node_modules,
+			"temperature_check_skip_num",
+			&camera_info[id].modules[i].temperature_check_skip_num);
+
+		if (rc < 0) {
+			LOGE("%s failed %d\n", __func__, __LINE__);
+			goto fail;
+		}
+
 		rc = of_property_read_u32(of_node_modules,
 			"total_pixel_number_w",
 			&camera_info[id].modules[i].total_pixel_number_w);
@@ -1407,6 +1418,8 @@ static ssize_t sony_camera_info_read(struct device *ldev,
 			memset(info->sensor_config_delay, 0, sizeof(info->sensor_config_delay));
 			memcpy(info->sensor_config_delay, camera_data[id].module->sensor_config_delay,
 				sizeof(info->sensor_config_delay));
+			info->temperature_check_skip_num =
+				camera_data[id].module->temperature_check_skip_num;
 			info->total_pixel_number_w =
 				camera_data[id].module->total_pixel_number_w;
 			info->total_pixel_number_h =

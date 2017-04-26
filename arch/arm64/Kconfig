@@ -333,11 +333,75 @@ config ARCH_SONY_TONE
       If you enable this config,
       please use SONY Mobile device tree.
 
-config MACH_SONY_KEYAKI
-    bool "Sony Mobile KEYAKI"
+config MACH_SONY_DORA
+    bool "Sony Mobile DORA"
     depends on ARCH_SONY_TONE
     help
-      Support for the SONY Mobile Keyaki device
+      Support for the SONY Mobile Dora device
+      which is based on SONY Tone platform.
+      If you enable this config,
+      please use SONY Mobile device tree.
+
+
+config MACH_SONY_DORA_DCM
+    bool "Sony Mobile DORA Docomo"
+    depends on ARCH_SONY_TONE
+    help
+      Support for the SONY Mobile Dora Docomo device
+      which is based on SONY Tone platform.
+      If you enable this config,
+      please use SONY Mobile device tree.
+
+config MACH_SONY_DORA_KDDI
+    bool "Sony Mobile DORA KDDI"
+    depends on ARCH_SONY_TONE
+    help
+      Support for the SONY Mobile Dora KDDI device
+      which is based on SONY Tone platform.
+      If you enable this config,
+      please use SONY Mobile device tree.
+
+config MACH_SONY_DORA_SBM
+    bool "Sony Mobile DORA SoftBank"
+    depends on ARCH_SONY_TONE
+    help
+      Support for the SONY Mobile Dora SoftBank device
+      which is based on SONY Tone platform.
+      If you enable this config,
+      please use SONY Mobile device tree.
+
+config MACH_SONY_KAGURA
+    bool "Sony Mobile KAGURA"
+    depends on ARCH_SONY_TONE
+    help
+      Support for the SONY Mobile Kagura device
+      which is based on SONY Tone platform.
+      If you enable this config,
+      please use SONY Mobile device tree.
+
+config MACH_SONY_KAGURA_DCM
+    bool "Sony Mobile KAGURA Docomo"
+    depends on ARCH_SONY_TONE
+    help
+      Support for the SONY Mobile Kagura Docomo device
+      which is based on SONY Tone platform.
+      If you enable this config,
+      please use SONY Mobile device tree.
+
+config MACH_SONY_KAGURA_KDDI
+    bool "Sony Mobile KAGURA KDDI"
+    depends on ARCH_SONY_TONE
+    help
+      Support for the SONY Mobile Kagura KDDI device
+      which is based on SONY Tone platform.
+      If you enable this config,
+      please use SONY Mobile device tree.
+
+config MACH_SONY_KAGURA_SBM
+    bool "Sony Mobile KAGURA SoftBank"
+    depends on ARCH_SONY_TONE
+    help
+      Support for the SONY Mobile Kagura SoftBank device
       which is based on SONY Tone platform.
       If you enable this config,
       please use SONY Mobile device tree.

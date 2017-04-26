@@ -49,6 +49,7 @@ struct sony_camera_module {
 	uint32_t		sensor_facing;
 	uint32_t		sensor_config_delay_num;
 	uint32_t		sensor_config_delay[MAX_CONFIG_DELAY_NUM];
+	uint32_t		temperature_check_skip_num;
 	uint32_t		total_pixel_number_w;
 	uint32_t		total_pixel_number_h;
 	uint32_t		active_pixel_number_x;

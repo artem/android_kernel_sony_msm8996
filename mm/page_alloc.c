@@ -795,7 +795,7 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 	kmemcheck_free_shadow(page, order);
 	kasan_free_pages(page, order);
 
-	if (PageAnon(page))
+	if (PageMappingFlags(page))
 		page->mapping = NULL;
 	for (i = 0; i < (1 << order); i++)
 		bad += free_pages_check(page + i);

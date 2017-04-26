@@ -1,4 +1,4 @@
-/* arch/arm/boot/dts/qcom/msm8996-tone-keyaki_generic.dtsi
+/* arch/arm/boot/dts/qcom/msm8996-tone-dora_generic.dtsi
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  */
 /*
- * Copyright (C) 2016 Sony Mobile Communications Inc.
+ * Copyright (C) 2015 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as
@@ -18,12 +18,6 @@
  */
 
 &soc {
-	somc_pinctrl: somc_pinctrl {
-		/* If variant specific default setting is needed,
-		   fill pinctrl-2 value in <variant>.dtsi */
-		pinctrl-2 = <&msm_gpio_49 &msm_gpio_73 &msm_gpio_74
-				&msm_gpio_77>;
-	};
 	 /*I2C : BLSP8 */
 	i2c@75b6000 { /* BLSP2 QUP1 */
 		nfc@28 {
@@ -41,68 +35,6 @@
 			pinctrl-names = "pn547-active", "pn547-inactive";
 			pinctrl-0 = <&msm_gpio_9 &msm_gpio_12>;
 			pinctrl-1 = <&msm_gpio_9 &msm_gpio_12>;
-		};
-	};
-
-};
-
-&tlmm {
-	/* GPIO_49 : NC */
-	msm_gpio_49: msm_gpio_49 {
-		mux {
-			pins = "gpio49";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio49";
-			drive-strength = <2>;
-			/delete-property/ bias-pull-up;
-			bias-pull-down;
-		};
-	};
-
-	/* GPIO_73 : NC */
-	msm_gpio_73: msm_gpio_73 {
-		mux {
-			pins = "gpio73";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio73";
-			drive-strength = <2>;
-			bias-disable;
-			output-low;
-		};
-	};
-
-	/* GPIO_74 : NC */
-	msm_gpio_74: msm_gpio_74 {
-		mux {
-			pins = "gpio74";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio74";
-			drive-strength = <2>;
-			bias-disable;
-			output-low;
-		};
-	};
-
-	/* GPIO_77 : NC */
-	msm_gpio_77: msm_gpio_77 {
-		mux {
-			pins = "gpio77";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio77";
-			drive-strength = <2>;
-			bias-pull-down;
 		};
 	};
 };
