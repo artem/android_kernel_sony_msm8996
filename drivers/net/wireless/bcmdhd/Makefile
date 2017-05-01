@@ -1,37 +1,14 @@
-#
-# Copyright (C) 1999-2017, Broadcom Corporation
-# 
-#      Unless you and Broadcom execute a separate written software license
-# agreement governing use of this software, this software is licensed to you
-# under the terms of the GNU General Public License version 2 (the "GPL"),
-# available at http://www.broadcom.com/licenses/GPLv2.php, with the
-# following added to such license:
-# 
-#      As a special exception, the copyright holders of this software give you
-# permission to link this software with independent modules, and to copy and
-# distribute the resulting executable under terms of your choice, provided that
-# you also meet, for each linked independent module, the terms and conditions of
-# the license of that module.  An independent module is a module which is not
-# derived from this software.  The special exception does not apply to any
-# modifications of the software.
-# 
-#      Notwithstanding the above, under no circumstances may you combine this
-# software in any way with any other Broadcom software provided under a license
-# other than the GPL, without Broadcom's express prior written consent.
-#
-#
-# <<Broadcom-WL-IPTag/Open:>>
-#
 # bcmdhd
 #####################
 # Basic feature
 #####################
 
 DHDCFLAGS += -Wall -Wno-date-time -Wstrict-prototypes -Dlinux -DLINUX -DBCMDRIVER      \
-        -DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE      \
-        -DDHDTHREAD -DDHD_BCMEVENTS -DSHOW_EVENTS -DBCMDBG -DWLP2P      \
-        -DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT -DKEEP_ALIVE -DCSCAN     \
-        -DPKT_FILTER_SUPPORT -DEMBEDDED_PLATFORM -DPNO_SUPPORT
+        -DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE                     \
+        -DDHDTHREAD -DDHD_BCMEVENTS -DSHOW_EVENTS -DBCMDBG -DWLP2P                     \
+        -DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT -DKEEP_ALIVE -DCSCAN                    \
+        -DPKT_FILTER_SUPPORT -DEMBEDDED_PLATFORM -DPNO_SUPPORT                         \
+        -DCONFIG_DTS
 
 #####################
 # Bus Interface Type
@@ -137,6 +114,8 @@ DHDCFLAGS += -DWL_SUPPORT_AUTO_CHANNEL -DSUPPORT_HIDDEN_AP
 DHDCFLAGS += -DDISABLE_11H_SOFTAP
 DHDCFLAGS += -DSUPPORT_HOSTAPD_BGN_MODE
 DHDCFLAGS += -DDISABLE_WL_FRAMEBURST_SOFTAP
+# For setting custom short & long retry limit
+DHDCFLAGS += -DSET_RETRY_LIMIT -DCUSTOM_SRL_SETTING=13 -DCUSTOM_LRL_SETTING=13
 
 # HW5 specific features
 DHDCFLAGS += -DSUPPORT_PM2_ONLY
@@ -206,9 +185,13 @@ DHDCFLAGS += -DCONFIG_HAS_WAKELOCK
 # Used short dwell time during initial scan
 DHDCFLAGS += -DUSE_INITIAL_SHORT_DWELL_TIME
 
+# Disable to delay link down event
+DHDCFLAGS += -DDISABLE_BCNLOSS_ROAM
+
 ##############################
 # Android Platform Definition
 ##############################
+BCM_SRC_DIR :=	bcmdhd
 
 ###############################
 # Android M
@@ -218,6 +201,10 @@ DHDCFLAGS += -DWL_ENABLE_P2P_IF
 # Default definitions for KitKat
 DHDCFLAGS += -DWL_CFG80211_STA_EVENT
 DHDCFLAGS += -DWL_IFACE_COMB_NUM_CHANNELS
+
+ifeq ($(CONFIG_BCMDHD_INSMOD_NO_FW_LOAD),y)
+  DHDCFLAGS += -DENABLE_INSMOD_NO_FW_LOAD
+endif
 
 ifneq ($(CONFIG_DHD_USE_SCHED_SCAN),)
 DHDCFLAGS += -DWL_SCHED_SCAN
@@ -238,7 +225,10 @@ DHDCFLAGS += -DWL_VENDOR_EXT_SUPPORT
 DHDCFLAGS += -DANQPO_SUPPORT
 
 # Extra file list for Lollipop
-ANDROID_OFILES := wl_cfgvendor.o dhd_rtt.o bcmxtlv.o bcm_app_utils.o
+ANDROID_OFILES := $(BCM_SRC_DIR)/wl_cfgvendor.o \
+		$(BCM_SRC_DIR)/dhd_rtt.o \
+		$(BCM_SRC_DIR)/bcmxtlv.o \
+		$(BCM_SRC_DIR)/bcm_app_utils.o
 
 
 
@@ -256,6 +246,8 @@ DRIVER_TYPE ?= m
 
 # Chipsets supported both SDIO and PCIE
 ifneq ($(CONFIG_BCM4359),)
+  DHDCFLAGS += -DSOMC_MIMO
+  DHDCFLAGS += -DSOMC_BMIC
   DHDCFLAGS += -DBCM4359_CHIP -DSUPPORT_MULTIPLE_REVISION
   DHDCFLAGS += -DMIMO_ANT_SETTING
   DHDCFLAGS += -DDISABLE_PARALLEL_SCAN
@@ -284,7 +276,7 @@ endif
 # For Runtime PM feature
 ifeq ($(BUS_IFACE_PCIE),y)
   DHDCFLAGS += -DBCMPCIE_OOB_HOST_WAKE
-  DHDCFLAGS += -DDHD_PCIE_RUNTIMEPM -DMAX_IDLE_COUNT=11 -DCUSTOM_DHD_RUNTIME_MS=100
+  DHDCFLAGS += -DDHD_PCIE_RUNTIMEPM -DMAX_IDLE_COUNT=11 -DCUSTOM_DHD_RUNTIME_MS=200
 endif
 
 ifeq ($(CONFIG_ARCH_MSM),y)
@@ -306,7 +298,7 @@ endif
   DHDCFLAGS += -DSUPPORT_WL_TXPOWER
   DHDCFLAGS += -DWL11ULB
   DHDCFLAGS += -DDISABLE_TXBFR
-# DHDCFLAGS += -DWL_ABORT_SCAN
+  DHDCFLAGS += -DWL_ABORT_SCAN
 
  # Support CUSTOM_EVENT_PM_WAKE
   DHDCFLAGS += -DCUSTOM_EVENT_PM_WAKE=30
@@ -316,7 +308,7 @@ endif
   DHDCFLAGS :=$(filter-out -DDISABLE_11H_SOFTAP,$(DHDCFLAGS))
 ifeq ($(CONFIG_BCM4359),y)
   DHDCFLAGS += -DENABLE_INSMOD_NO_FW_LOAD
-  DHDCFLAGS += -DUSE_LATE_INITCALL_SYNC
+#  DHDCFLAGS += -DUSE_LATE_INITCALL_SYNC
 endif
 ifeq ($(CONFIG_ARCH_MSM8996),y)
  # Enable Dongle Isolation
@@ -508,33 +500,110 @@ endif
 #############################
 # Platform dependent feature
 #############################
+# Default Beacon timeout
+ifneq ($(CONFIG_SOMC_WLAN_BCN_TIMEOUT),)
+  DHDCFLAGS += -DCUSTOM_BCN_TIMEOUT=$(CONFIG_SOMC_WLAN_BCN_TIMEOUT)
+else
+  DHDCFLAGS += -DCUSTOM_BCN_TIMEOUT=3
+endif
+
+# The number of the maximum devices which phone can associate
+DHDCFLAGS += -DSOMC_MAX_ASSOC_NUM=10
+
+# Default Listen Interval in Beacons
+ifneq ($(CONFIG_SOMC_WLAN_LISTEN_INTERVAL),)
+  DHDCFLAGS += -DCUSTOM_LISTEN_INTERVAL=$(CONFIG_SOMC_WLAN_LISTEN_INTERVAL)
+endif
+
+# WAPI
+DHDCFLAGS += -DBCMWAPI_WPI -DBCMWAPI_WAI
+
+# Set keep alive period
+ifneq ($(CONFIG_SOMC_WLAN_KEEP_ALIVE_SETTING),)
+  DHDCFLAGS += -DCUSTOM_KEEP_ALIVE_SETTING=$(CONFIG_SOMC_WLAN_KEEP_ALIVE_SETTING)
+endif
+
+# Change scan time
+ifeq ($(CONFIG_SOMC_CFG_WLAN_CHANGE_SCAN_TIME),y)
+  DHDCFLAGS += -DCHANGE_SCAN_TIME
+endif
+
+# Set default nvram path
+ifneq ($(CONFIG_SOMC_WLAN_NVRAM_PATH),)
+  DHDCFLAGS += -DCONFIG_BCMDHD_NVRAM_PATH=\"$(CONFIG_SOMC_WLAN_NVRAM_PATH)\"
+endif
+
+# Enable Disconnection timing log
+ifeq ($(CONFIG_SOMC_WLAN_ENABLE_DISC_TIME_LOG),y)
+  DHDCFLAGS += -DDHD_ENABLE_DISC_TIME_LOG
+endif
+
 #########
 # Others
 #########
+BCM_SRC_DIR :=	bcmdhd
 
+# Read custom mac address function
+DHDCFLAGS += -DGET_CUSTOM_MAC_ENABLE
 
 EXTRA_LDFLAGS += --strip-debug
 EXTRA_CFLAGS += $(DHDCFLAGS) -DDHD_DEBUG
-EXTRA_CFLAGS += -DSRCBASE=\"$(src)\"
-EXTRA_CFLAGS += -I$(src)/include/ -I$(src)/
-KBUILD_CFLAGS += -I$(LINUXDIR)/include -I$(shell pwd)
+EXTRA_CFLAGS += -DSRCBASE=\"$(BCM_SRC_DIR)\"
+EXTRA_CFLAGS += -I$(WLAN_ROOT)/$(BCM_SRC_DIR)/include/ \
+		-I$(WLAN_ROOT)/$(BCM_SRC_DIR)/ \
+		-I$(WLAN_ROOT)/../common/
 
-DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o \
-	dhd_linux.o dhd_linux_sched.o dhd_cfg80211.o dhd_linux_wq.o aiutils.o bcmevent.o \
-	bcmutils.o bcmwifi_channels.o hndpmu.o linux_osl.o sbutils.o siutils.o \
-	wl_android.o wl_cfg80211.o wl_cfgp2p.o wl_cfg_btcoex.o wldev_common.o \
-	wl_linux_mon.o wl_roam.o dhd_linux_platdev.o dhd_linux_wq.o wl_cfg_btcoex.o \
-	dhd_wlfc.o hnd_pktq.o hnd_pktpool.o dhd_debug.o dhd_debug_linux.o
+MODNAME := wlan
 
+DHDOFILES := $(BCM_SRC_DIR)/dhd_pno.o \
+		$(BCM_SRC_DIR)/dhd_common.o \
+		$(BCM_SRC_DIR)/dhd_ip.o \
+		$(BCM_SRC_DIR)/dhd_custom_gpio.o \
+		$(BCM_SRC_DIR)/dhd_linux.o \
+		$(BCM_SRC_DIR)/dhd_linux_sched.o \
+		$(BCM_SRC_DIR)/dhd_cfg80211.o \
+		$(BCM_SRC_DIR)/dhd_linux_wq.o \
+		$(BCM_SRC_DIR)/aiutils.o \
+		$(BCM_SRC_DIR)/bcmevent.o \
+		$(BCM_SRC_DIR)/bcmutils.o \
+		$(BCM_SRC_DIR)/bcmwifi_channels.o \
+		$(BCM_SRC_DIR)/hndpmu.o \
+		$(BCM_SRC_DIR)/linux_osl.o \
+		$(BCM_SRC_DIR)/sbutils.o \
+		$(BCM_SRC_DIR)/siutils.o \
+		$(BCM_SRC_DIR)/wl_android.o \
+		$(BCM_SRC_DIR)/wl_cfg80211.o \
+		$(BCM_SRC_DIR)/wl_cfgp2p.o \
+		$(BCM_SRC_DIR)/wl_cfg_btcoex.o \
+		$(BCM_SRC_DIR)/wldev_common.o \
+		$(BCM_SRC_DIR)/wl_linux_mon.o \
+		$(BCM_SRC_DIR)/wl_roam.o \
+		$(BCM_SRC_DIR)/dhd_linux_platdev.o \
+		$(BCM_SRC_DIR)/dhd_linux_wq.o \
+		$(BCM_SRC_DIR)/wl_cfg_btcoex.o \
+		$(BCM_SRC_DIR)/dhd_wlfc.o \
+		$(BCM_SRC_DIR)/hnd_pktq.o \
+		$(BCM_SRC_DIR)/hnd_pktpool.o \
+		$(BCM_SRC_DIR)/dhd_debug.o \
+		$(BCM_SRC_DIR)/dhd_debug_linux.o \
+		../common/dhd_somc_custom.o
 
 ifeq ($(BUS_IFACE_SDIO),y)
-DHDOFILES += bcmsdh.o bcmsdh_linux.o bcmsdh_sdmmc.o bcmsdh_sdmmc_linux.o
-DHDOFILES += dhd_cdc.o dhd_sdio.o
+DHDOFILES += $(BCM_SRC_DIR)/bcmsdh.o \
+		$(BCM_SRC_DIR)/bcmsdh_linux.o \
+		$(BCM_SRC_DIR)/bcmsdh_sdmmc.o \
+		$(BCM_SRC_DIR)/bcmsdh_sdmmc_linux.o \
+		$(BCM_SRC_DIR)/dhd_cdc.o \
+		$(BCM_SRC_DIR)/dhd_sdio.o
 endif
 
 
 ifeq ($(BUS_IFACE_PCIE),y)
-DHDOFILES += dhd_pcie.o dhd_pcie_linux.o pcie_core.o dhd_flowring.o dhd_msgbuf.o
+DHDOFILES += $(BCM_SRC_DIR)/dhd_pcie.o \
+		$(BCM_SRC_DIR)/dhd_pcie_linux.o \
+		$(BCM_SRC_DIR)/pcie_core.o \
+		$(BCM_SRC_DIR)/dhd_flowring.o \
+		$(BCM_SRC_DIR)/dhd_msgbuf.o
 endif
 
 
@@ -542,19 +611,12 @@ DHDOFILES += $(ANDROID_OFILES)
 
 # NAN feature
 ifeq ($(CONFIG_WL_NAN),y)
-DHDOFILES += wl_cfgnan.o bcmxtlv.o
+DHDOFILES += $(BCM_SRC_DIR)/wl_cfgnan.o \
+		$(BCM_SRC_DIR)/bcmxtlv.o
 endif
-bcmdhd-objs := $(DHDOFILES)
-obj-$(DRIVER_TYPE)   += bcmdhd.o
 
-all:
-	@echo "$(MAKE) --no-print-directory -C $(KDIR) SUBDIRS=$(CURDIR) modules"
-	@$(MAKE) --no-print-directory -C $(KDIR) SUBDIRS=$(CURDIR) modules
+# Module information used by KBuild framework
+obj-$(CONFIG_BCMDHD) += $(MODNAME).o
 
-clean:
-	rm -rf *.o *.ko *.mod.c *~ .*.cmd *.o.cmd .*.o.cmd \
-	Module.symvers modules.order .tmp_versions modules.builtin
+$(MODNAME)-y := $(DHDOFILES)
 
-install:
-	@$(MAKE) --no-print-directory -C $(KDIR) \
-		SUBDIRS=$(CURDIR) modules_install
