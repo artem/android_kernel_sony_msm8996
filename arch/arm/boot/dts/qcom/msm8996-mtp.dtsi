@@ -11,7 +11,7 @@
  */
 
 #include "msm8996-pinctrl.dtsi"
-#include "msm8996-camera-sensor-mtp.dtsi"
+/* #include "msm8996-camera-sensor-mtp.dtsi" */
 #include "msm8996-wsa881x.dtsi"
 
 / {
@@ -274,6 +274,7 @@
 	};
 };
 
+/*
 &mdss_hdmi_tx {
 	pinctrl-names = "hdmi_hpd_active", "hdmi_ddc_active", "hdmi_cec_active",
 				"hdmi_active", "hdmi_sleep";
@@ -288,6 +289,7 @@
 	pinctrl-4 = <&mdss_hdmi_hpd_suspend &mdss_hdmi_ddc_suspend
 						&mdss_hdmi_cec_suspend>;
 };
+*/
 
 &pmi8994_vadc {
 	chan@0 {
@@ -723,9 +725,6 @@
 			"SpkrLeft IN", "SPK1 OUT",
 			"SpkrRight IN", "SPK2 OUT";
 
-		qcom,hdmi-audio-rx;
-		asoc-codec = <&stub_codec>, <&hdmi_audio>;
-		asoc-codec-names = "msm-stub-codec.1", "msm-hdmi-audio-codec-rx";
 		qcom,hph-en1-gpio = <&pmi8994_gpios 10 0>;
 		qcom,hph-en0-gpio = <&pm8994_gpios 13 0>;
 		qcom,us-euro-gpios = <&pm8994_mpps 2 0>;
