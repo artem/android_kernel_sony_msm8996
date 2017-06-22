@@ -1599,8 +1599,14 @@ int mdss_mdp_pa_config(struct msm_fb_data_type *mfd,
 			struct mdp_pa_cfg_data *config, u32 *copyback);
 int mdss_mdp_pa_v2_config(struct msm_fb_data_type *mfd,
 			struct mdp_pa_v2_cfg_data *config, u32 *copyback);
+#ifdef CONFIG_FB_MSM_MDSS_SPECIFIC_PANEL
+int mdss_mdp_pcc_config(struct msm_fb_data_type *mfd,
+			struct mdp_pcc_cfg_data *cfg_ptr, u32 *copyback,
+			u32 copy_from_kernel);
+#else
 int mdss_mdp_pcc_config(struct msm_fb_data_type *mfd,
 			struct mdp_pcc_cfg_data *cfg_ptr, u32 *copyback);
+#endif /* CONFIG_FB_MSM_MDSS_SPECIFIC_PANEL */
 int mdss_mdp_igc_lut_config(struct msm_fb_data_type *mfd,
 			struct mdp_igc_lut_data *config, u32 *copyback,
 				u32 copy_from_kernel);

@@ -31,8 +31,13 @@ int pp_dither_cache_params(struct mdp_dither_cfg_data *config,
 
 int pp_gamut_cache_params(struct mdp_gamut_cfg_data *config,
 			  struct mdss_pp_res_type *mdss_pp_res);
+#ifdef CONFIG_FB_MSM_MDSS_SPECIFIC_PANEL
+int pp_pcc_cache_params(struct mdp_pcc_cfg_data *config,
+			struct mdp_pp_cache_res *res_cache, u32 copy_from_kernel);
+#else
 int pp_pcc_cache_params(struct mdp_pcc_cfg_data *config,
 			  struct mdp_pp_cache_res *res_cache);
+#endif /* CONFIG_FB_MSM_MDSS_SPECIFIC_PANEL */
 int pp_pa_cache_params(struct mdp_pa_v2_cfg_data *config,
 			  struct mdp_pp_cache_res *res_cache);
 
