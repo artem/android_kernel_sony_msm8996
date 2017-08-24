@@ -504,4 +504,13 @@ config CRYPTO_DEV_QCE
 	  hardware. To compile this driver as a module, choose M here. The
 	  module will be called qcrypto.
 
+config CRYPTO_DEV_KFIPS
+	tristate "KFIPS user space crypto proxy"
+	select CRYPTO_ALGAPI
+	select CRYPTO_BLKCIPHER
+	help
+	  This option enables the 'kfips' crypto driver that performs
+	  crypto operations with the help of the 'ufips' user space
+	  program that uses a FIPS-certified cryptography library.
+
 endif # CRYPTO_HW
