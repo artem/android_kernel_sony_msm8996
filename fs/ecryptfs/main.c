@@ -37,7 +37,12 @@
 #include <linux/fs_stack.h>
 #include <linux/slab.h>
 #include <linux/magic.h>
+#include <linux/mm.h>
 #include "ecryptfs_kernel.h"
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+#include <linux/ctype.h>
+#define ERROR_RET -1
+#endif
 
 /**
  * Module parameter that defines the ecryptfs_verbosity level.
@@ -191,7 +196,6 @@ void ecryptfs_put_lower_file(struct inode *inode)
 			ecryptfs_inode_to_lower(inode));
 	}
 
-
 }
 
 enum { ecryptfs_opt_sig, ecryptfs_opt_ecryptfs_sig,
@@ -202,6 +206,9 @@ enum { ecryptfs_opt_sig, ecryptfs_opt_ecryptfs_sig,
        ecryptfs_opt_fn_cipher, ecryptfs_opt_fn_cipher_key_bytes,
        ecryptfs_opt_unlink_sigs, ecryptfs_opt_mount_auth_tok_only,
        ecryptfs_opt_check_dev_ruid,
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+	   ecryptfs_opt_enable_filtering,
+#endif
        ecryptfs_opt_err };
 
 static const match_table_t tokens = {
@@ -219,6 +226,9 @@ static const match_table_t tokens = {
 	{ecryptfs_opt_unlink_sigs, "ecryptfs_unlink_sigs"},
 	{ecryptfs_opt_mount_auth_tok_only, "ecryptfs_mount_auth_tok_only"},
 	{ecryptfs_opt_check_dev_ruid, "ecryptfs_check_dev_ruid"},
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+	{ecryptfs_opt_enable_filtering, "ecryptfs_enable_filtering=%s"},
+#endif
 	{ecryptfs_opt_err, NULL}
 };
 
@@ -260,6 +270,57 @@ static void ecryptfs_init_mount_crypt_stat(
 	mount_crypt_stat->flags |= ECRYPTFS_MOUNT_CRYPT_STAT_INITIALIZED;
 }
 
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+static int parse_enc_file_filter_parms(
+	struct ecryptfs_mount_crypt_stat *mcs, char *str)
+{
+	char *token = NULL;
+	int count = 0;
+	mcs->max_name_filter_len = 0;
+	while ((token = strsep(&str, "|")) != NULL) {
+		if (count >= ENC_NAME_FILTER_MAX_INSTANCE)
+			return ERROR_RET;
+		strlcpy(mcs->enc_filter_name[count++],
+			token, ENC_NAME_FILTER_MAX_LEN);
+		if (mcs->max_name_filter_len < strlen(token))
+			mcs->max_name_filter_len = strlen(token);
+	}
+	return 0;
+}
+
+static int parse_enc_ext_filter_parms(
+	struct ecryptfs_mount_crypt_stat *mcs, char *str)
+{
+	char *token = NULL;
+	int count = 0;
+	while ((token = strsep(&str, "|")) != NULL) {
+		if (count >= ENC_EXT_FILTER_MAX_INSTANCE)
+			return ERROR_RET;
+		strlcpy(mcs->enc_filter_ext[count++],
+			token, ENC_EXT_FILTER_MAX_LEN);
+	}
+	return 0;
+}
+
+static int parse_enc_filter_parms(
+	struct ecryptfs_mount_crypt_stat *mcs, char *str)
+{
+
+	char *token = NULL;
+	if (!strcmp("*", str)) {
+
+		mcs->flags |= ECRYPTFS_ENABLE_NEW_PASSTHROUGH;
+		return 0;
+	}
+	token = strsep(&str, ":");
+	if (token != NULL)
+		parse_enc_file_filter_parms(mcs, token);
+	token = strsep(&str, ":");
+	if (token != NULL)
+		parse_enc_ext_filter_parms(mcs, token);
+	return 0;
+}
+#endif
 /**
  * ecryptfs_parse_options
  * @sb: The ecryptfs super block
@@ -419,6 +480,18 @@ static int ecryptfs_parse_options(struct ecryptfs_sb_info *sbi, char *options,
 		case ecryptfs_opt_check_dev_ruid:
 			*check_ruid = 1;
 			break;
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+		case ecryptfs_opt_enable_filtering:
+			rc = parse_enc_filter_parms(mount_crypt_stat,
+							 args[0].from);
+			if (rc) {
+				pr_err("Error attempting to parse encryption filtering parameters.\n");
+				rc = -EINVAL;
+				goto out;
+			}
+			mount_crypt_stat->flags |= ECRYPTFS_ENABLE_FILTERING;
+			break;
+#endif
 		case ecryptfs_opt_err:
 		default:
 			printk(KERN_WARNING
@@ -602,7 +675,6 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 	if (get_events() && get_events()->is_hw_crypt_cb &&
 			get_events()->is_hw_crypt_cb())
 		drop_pagecache_sb(ecryptfs_superblock_to_lower(s), 0);
-
 	/**
 	 * Set the POSIX ACL flag based on whether they're enabled in the lower
 	 * mount.

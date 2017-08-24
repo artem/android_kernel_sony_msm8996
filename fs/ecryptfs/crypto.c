@@ -145,6 +145,13 @@ static int ecryptfs_crypto_api_algify_cipher_name(char **algified_name,
 	int algified_name_len;
 	int rc;
 
+	if (!strcmp(cipher_name, "aes") &&
+	    (!strcmp(chaining_modifier, "cbc") ||
+	     !strcmp(chaining_modifier, "xts"))) {
+		cipher_name = "fipsaes";
+		cipher_name_len = strlen(cipher_name);
+	}
+
 	algified_name_len = (chaining_modifier_len + cipher_name_len + 3);
 	(*algified_name) = kmalloc(algified_name_len, GFP_KERNEL);
 	if (!(*algified_name)) {
@@ -481,7 +488,6 @@ static void init_ecryption_parameters(bool *hw_crypt, bool *cipher_supported,
 		*cipher_supported =
 			get_events()->is_cipher_supported_cb(crypt_stat);
 		if (*cipher_supported) {
-
 			/**
 			 * we should apply external algorythm
 			 * assume that is_hw_crypt() cbck is supplied
@@ -806,7 +812,6 @@ static void ecryptfs_generate_new_key(struct ecryptfs_crypt_stat *crypt_stat)
 static int ecryptfs_generate_new_salt(struct ecryptfs_crypt_stat *crypt_stat)
 {
 	size_t salt_size = 0;
-
 	salt_size = ecryptfs_get_salt_size_for_cipher(crypt_stat);
 
 	if (0 == salt_size)
