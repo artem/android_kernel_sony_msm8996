@@ -46,13 +46,13 @@
 #define PN547_WAIT_VENENABLE	10
 #define PN547_WAIT_VENDISABLE	60
 
-#define PN547_WAKE_LOCK_TIMEOUT	(HZ)
+#define PN547_WAKE_LOCK_TIMEOUT	1000
 #define MAX_I2C_RETRY_COUNT	5
 #define MAX_NORMAL_FRAME_SIZE	(255 + 3)
 #define MAX_FIRMDL_FRAME_SIZE	(1023 + 5)
 
-#define PN547_RES_READY_TIMEOUT_NORMAL	(HZ * 2)
-#define PN547_RES_READY_TIMEOUT_FWDL	(HZ * 15)
+#define PN547_RES_READY_TIMEOUT_NORMAL	2000
+#define PN547_RES_READY_TIMEOUT_FWDL	15000
 #define PN547_RES_READY_SIZE	6
 #define PN547_RES_READY	"ready"
 #define PN547_RES_NOT_READY	"not_ready"
@@ -112,7 +112,7 @@ static irqreturn_t pn547_dev_irq_handler(int irq, void *dev_info)
 
 	dev_dbg(d->dev, "%s: interruption\n", __func__);
 	mutex_lock(&lock);
-	wake_lock_timeout(&d->wake_lock, PN547_WAKE_LOCK_TIMEOUT);
+	wake_lock_timeout(&d->wake_lock, msecs_to_jiffies(PN547_WAKE_LOCK_TIMEOUT));
 	atomic_set(&d->res_ready, 1);
 	wake_up_interruptible(&d->wq);
 	mutex_unlock(&lock);
@@ -336,7 +336,7 @@ static ssize_t pn547_dev_res_ready_show(struct device *dev,
 
 	wait_event_interruptible_timeout(d->wq, atomic_read(&d->res_ready),
 		d->state == PN547_STATE_FWDL ?
-		PN547_RES_READY_TIMEOUT_FWDL : PN547_RES_READY_TIMEOUT_NORMAL);
+		msecs_to_jiffies(PN547_RES_READY_TIMEOUT_FWDL) : msecs_to_jiffies(PN547_RES_READY_TIMEOUT_NORMAL));
 	if (atomic_read(&d->res_ready))
 		state = true;
 
@@ -625,7 +625,7 @@ static int pn547_pm_suspend(struct device *dev)
 	if (d->busy) {
 		if (atomic_read(&d->res_ready)) {
 			wake_lock_timeout(&d->wake_lock,
-				PN547_WAKE_LOCK_TIMEOUT);
+				msecs_to_jiffies(PN547_WAKE_LOCK_TIMEOUT));
 			mutex_unlock(&lock);
 			return -EAGAIN;
 		}
