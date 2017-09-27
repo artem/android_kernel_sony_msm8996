@@ -63,7 +63,7 @@ static void nt35399_wait_vsync(struct msm_panel_data *panel_data)
 	}
 
 	if (wait_event_timeout(nt35399_vsync_wait, panel->nt35399_got_int,
-				HZ/2) == 0)
+				msecs_to_jiffies(500)) == 0)
 		printk(KERN_ERR "timeout waiting for VSYNC\n");
 
 	panel->nt35399_got_int = 0;
