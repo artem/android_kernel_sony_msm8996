@@ -279,13 +279,7 @@ static void msm_restart_prepare(const char *cmd)
 
 	qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
 
-	if (in_panic) {
-		u32 prev_reason;
-
-		prev_reason = __raw_readl(restart_reason);
-		if (prev_reason != 0xABADF00D)
-			__raw_writel(0xC0DEDEAD, restart_reason);
-	} else if (cmd != NULL) {
+	if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_BOOTLOADER);
