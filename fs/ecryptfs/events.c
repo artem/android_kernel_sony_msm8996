@@ -390,4 +390,3 @@ size_t ecryptfs_get_salt_size_for_cipher_mount(
 
 	return get_events()->get_salt_key_size_cb(crypt_stat);
 }
-
