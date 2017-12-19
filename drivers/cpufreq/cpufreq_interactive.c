@@ -89,7 +89,7 @@ struct cpufreq_interactive_policyinfo {
 	u64 max_freq_hyst_start_time;
 	struct rw_semaphore enable_sem;
 	bool reject_notification;
-	bool notif_pending;
+	atomic_t notif_pending;
 	unsigned long notif_cpu;
 	int governor_enabled;
 	struct cpufreq_interactive_tunables *cached_tunables;
@@ -520,6 +520,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	bool skip_hispeed_logic, skip_min_sample_time;
 	bool jump_to_max_no_ts = false;
 	bool jump_to_max = false;
+	bool notif_pending = false;
 #ifdef CONFIG_SCHED_HMP
 	struct cluster *clstr;
 #endif
@@ -534,10 +535,15 @@ static void cpufreq_interactive_timer(unsigned long data)
 	spin_lock_irqsave(&ppol->target_freq_lock, flags);
 	spin_lock(&ppol->load_lock);
 
+	if (atomic_read(&ppol->notif_pending)) {
+		(void) hrtimer_try_to_cancel(&ppol->notif_timer);
+		atomic_set(&ppol->notif_pending, 0);
+		notif_pending = true;
+	}
+
 	skip_hispeed_logic =
-		tunables->ignore_hispeed_on_notif && ppol->notif_pending;
-	skip_min_sample_time = tunables->fast_ramp_down && ppol->notif_pending;
-	ppol->notif_pending = false;
+		tunables->ignore_hispeed_on_notif && notif_pending;
+	skip_min_sample_time = tunables->fast_ramp_down && notif_pending;
 	now = ktime_to_us(ktime_get());
 	ppol->last_evaluated_jiffy = get_jiffies_64();
 
@@ -709,6 +715,9 @@ static void cpufreq_interactive_timer(unsigned long data)
 	spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
 
 #ifdef CONFIG_SCHED_HMP
+	/*
+	 * per cluster == per policy. Each cluster has own policy.
+	 */
 	clstr = ppol->cluster;
 	if (clstr) {
 		spin_lock_irqsave(&clstr->speedchange_cpumask_lock, flags);
@@ -804,19 +813,6 @@ static int speed_change_task_hmp(void *data)
 		cpumask_clear(&clstr->speedchange_cpumask);
 		spin_unlock_irqrestore(
 			&clstr->speedchange_cpumask_lock, flags);
-
-		/*
-		 * Recover if we are on a wrong CPU. It might happen
-		 * because of hot-plug functionality. Affinity mask of
-		 * the process is changed, when there are no any online
-		 * CPU in tsk_cpus_allowed(p).
-		 */
-		if (!cpumask_test_cpu(smp_processor_id(), &clstr->cpus)) {
-			pr_info("change affinity mask on %d CPU, cluster id is %d\n",
-				   smp_processor_id(), clstr->id);
-
-			set_cpus_allowed(current, clstr->cpus);
-		}
 
 		update_cpus_freq_in_mask(&tmp_mask);
 	}
@@ -967,7 +963,6 @@ static int load_change_callback(struct notifier_block *nb, unsigned long val,
 	unsigned long cpu = (unsigned long) data;
 	struct cpufreq_interactive_policyinfo *ppol = per_cpu(polinfo, cpu);
 	struct cpufreq_interactive_tunables *tunables;
-	unsigned long flags;
 
 	if (!ppol || ppol->reject_notification)
 		return 0;
@@ -981,14 +976,13 @@ static int load_change_callback(struct notifier_block *nb, unsigned long val,
 	if (!tunables->use_sched_load || !tunables->use_migration_notif)
 		goto exit;
 
-	spin_lock_irqsave(&ppol->target_freq_lock, flags);
-	ppol->notif_pending = true;
-	ppol->notif_cpu = cpu;
-	spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
+	if (!atomic_cmpxchg(&ppol->notif_pending, 0, 1)) {
+		ppol->notif_cpu = cpu;
+		if (!hrtimer_is_queued(&ppol->notif_timer))
+			__hrtimer_start_range_ns(&ppol->notif_timer, ms_to_ktime(1),
+				0, HRTIMER_MODE_REL, 0);
+	}
 
-	if (!hrtimer_is_queued(&ppol->notif_timer))
-		__hrtimer_start_range_ns(&ppol->notif_timer, ms_to_ktime(1),
-					0, HRTIMER_MODE_REL, 0);
 exit:
 	up_read(&ppol->enable_sem);
 	return 0;
@@ -1001,18 +995,29 @@ static enum hrtimer_restart cpufreq_interactive_hrtimer(struct hrtimer *timer)
 	int cpu;
 
 	if (!down_read_trylock(&ppol->enable_sem))
-		return 0;
-	if (!ppol->governor_enabled) {
-		up_read(&ppol->enable_sem);
-		return 0;
-	}
+		goto no_restart;
+
+	if (!ppol->governor_enabled)
+		goto up_read_no_restart;
+
+	/*
+	 * We race here with a policy timer, but it is not
+	 * a big issue. Just leave the callback, because
+	 * notification has already been handled by the
+	 * normal periodic timer.
+	 */
+	if (!atomic_read(&ppol->notif_pending))
+		goto up_read_no_restart;
+
 	cpu = ppol->notif_cpu;
 	trace_cpufreq_interactive_load_change(cpu);
 	del_timer(&ppol->policy_timer);
 	del_timer(&ppol->policy_slack_timer);
 	cpufreq_interactive_timer(cpu);
 
+up_read_no_restart:
 	up_read(&ppol->enable_sem);
+no_restart:
 	return HRTIMER_NORESTART;
 }
 
@@ -2029,7 +2034,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		ppol->hispeed_validate_time = ppol->floor_validate_time;
 		ppol->min_freq = policy->min;
 		ppol->reject_notification = true;
-		ppol->notif_pending = false;
+		atomic_set(&ppol->notif_pending, 0);
 		down_write(&ppol->enable_sem);
 		del_timer_sync(&ppol->policy_timer);
 		del_timer_sync(&ppol->policy_slack_timer);
@@ -2126,18 +2131,20 @@ module_init(cpufreq_interactive_init);
 static void __exit cpufreq_interactive_exit(void)
 {
 	int cpu;
-#ifdef CONFIG_SCHED_HMP
-	struct cluster *clstr, *tmp;
 
-	for_each_cluster_safe(clstr, tmp) {
-		hmp_unregister_cluster(clstr);
+	cpufreq_unregister_governor(&cpufreq_gov_interactive);
+#ifdef CONFIG_SCHED_HMP
+	{
+		struct cluster *clstr, *tmp;
+
+		for_each_cluster_safe(clstr, tmp) {
+			hmp_unregister_cluster(clstr);
+		}
 	}
 #else
 	kthread_stop(speedchange_task);
 	put_task_struct(speedchange_task);
 #endif
-
-	cpufreq_unregister_governor(&cpufreq_gov_interactive);
 
 	for_each_possible_cpu(cpu)
 		free_policyinfo(cpu);
