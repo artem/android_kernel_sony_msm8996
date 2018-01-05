@@ -39,9 +39,7 @@
 &firmware {
 	android {
 		fstab {
-			vendor {
-				status = "disabled";
-			};
+			/delete-node/ vendor;
 		};
 	};
 };
