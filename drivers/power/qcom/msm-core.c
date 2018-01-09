@@ -114,6 +114,8 @@ ALLOCATE_2D_ARRAY(uint32_t);
 
 static __read_mostly int poll_ms;
 static __read_mostly int poll_ms_dummy;
+module_param_named(polling_interval_real, poll_ms, int,
+		S_IRUGO | S_IWUSR | S_IWGRP);
 module_param_named(polling_interval, poll_ms_dummy, int,
 		S_IRUGO | S_IWUSR | S_IWGRP);
 
