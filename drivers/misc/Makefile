@@ -73,3 +73,6 @@ obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
 obj-$(CONFIG_APDS9930)		+= apds993x.o
 obj-$(CONFIG_UID_SYS_STATS) += uid_sys_stats.o
 obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
+obj-$(CONFIG_RAMDUMP_TAGS) += rdtags.o
+obj-$(CONFIG_RAMDUMP_MEMDESC) += ramdump_mem_desc.o
+obj-$(CONFIG_BCM_WLAN_RAMDUMP) += bcm_wlan_ramdump.o
