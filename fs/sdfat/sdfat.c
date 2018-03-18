@@ -4964,7 +4964,8 @@ static void sdfat_debug_kill_sb(struct super_block *sb)
 
 static struct file_system_type sdfat_fs_type = {
 	.owner       = THIS_MODULE,
-	.name        = "sdfat",
+//	.name        = "sdfat",
+	.name        = "texfat",
 	.mount       = sdfat_fs_mount,
 #ifdef CONFIG_SDFAT_DBG_IOCTL
 	.kill_sb    = sdfat_debug_kill_sb,
@@ -4983,7 +4984,8 @@ static int __init init_sdfat_fs(void)
 	if (err)
 		goto error;
 
-	sdfat_kset = kset_create_and_add("sdfat", NULL, fs_kobj);
+//	sdfat_kset = kset_create_and_add("sdfat", NULL, fs_kobj);
+	sdfat_kset = kset_create_and_add("texfat", NULL, fs_kobj);
 	if (!sdfat_kset) {
 		pr_err("[SDFAT] failed to create fs_kobj\n");
 		err = -ENOMEM;
