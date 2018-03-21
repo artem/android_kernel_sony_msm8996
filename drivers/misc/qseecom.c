@@ -2254,18 +2254,6 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 		return -EFAULT;
 	}
 
-	load_img_req.img_name[MAX_APP_NAME_SIZE-1] = '\0';
-
-#ifdef CONFIG_ARCH_SONY_TONE
-	/*
-	* Ignore Suntory load request since it fails on unlocked bootloader anyway
-	*/
-	if (strcmp(load_img_req.img_name, "tzsuntory") == 0) {
-		pr_warn("Detected Suntory load request, ignoring...\n");
-		return 0;
-	}
-#endif
-
 	/* Check and load cmnlib */
 	if (qseecom.qsee_version > QSEEE_VERSION_00) {
 		if (!qseecom.commonlib_loaded &&
@@ -2305,6 +2293,7 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 		goto enable_clk_err;
 
 	req.qsee_cmd_id = QSEOS_APP_LOOKUP_COMMAND;
+	load_img_req.img_name[MAX_APP_NAME_SIZE-1] = '\0';
 	strlcpy(req.app_name, load_img_req.img_name, MAX_APP_NAME_SIZE);
 
 	ret = __qseecom_check_app_exists(req, &app_id);
