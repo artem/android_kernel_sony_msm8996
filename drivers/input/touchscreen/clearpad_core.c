@@ -8,7 +8,7 @@
  * published by the Free Software Foundation.
  */
 /*
- * Copyright (C) 2015 Sony Mobile Communications Inc.
+ * Copyright (C) 2016 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as
@@ -90,6 +90,17 @@
 #define SYN_WAKEUP_GESTURE			"wakeup_gesture"
 #define WAKE_LOCK_ID				"touchctrl"
 #define INDENT					"        "
+#define FLASH_DATA_CONFIGURATION_AREA_SELECT_PERM	1
+#define FLASH_DATA_CONFIGURATION_AREA_SELECT_SHIFT	13
+#define FLASH_READ_CONFIGURATION_SIZE			21
+#define FLASH_READ_FIRMWARE_INFO_SIZE_BL6X			4
+#define FLASH_READ_FIRMWARE_INFO_SIZE_BL7X			5
+
+/*
+ * Register Offset
+ */
+
+/* F01_RMI_CTRL05: Doze Holdoff */
 #define SYN_COVER_RECTANGLE_OFFSET	0x01
 #define SYN_EXTERNAL_REPORT_RATE_OFFSET	0x06
 
@@ -232,6 +243,16 @@ BIT_DEF(STATUS_FLASH_STATUS,					0x1F, 0,
 	STATUS_FLASH_STATUS_FLASH_HARDWARE_FAILURE		= 0x1F);
 BIT_DEF(STATUS_DEVICE_CONFIG_STATUS,			0x60, 5);
 BIT_DEF(STATUS_BL_MODE,					0x80, 7);
+/* F34_FLASH_DATA02: Flash Control */
+BIT_DEF(FLASH_CONTROL,					0x3F, 0,
+	FLASH_CONTROL_WRITE_FIRMWARE_BLOCK		= 0x02,
+	FLASH_CONTROL_ERASE_ALL				= 0x03,
+	FLASH_CONTROL_READ_CONFIGURATION_BLOCK		= 0x05,
+	FLASH_CONTROL_WRITE_CONFIGURATION_BLOCK		= 0x06,
+	FLASH_CONTROL_ERASE_CONFIGURATION		= 0x07,
+	FLASH_CONTROL_ENABLE_FLASH_PROGRAMMING		= 0x0F);
+/* F34_FLASH_DATA03: Flash Status */
+BIT_DEF(FLASH_STATUS_PROGRAM_ENABLED,			0x80, 7);
 
 /* F51_CUSTOM_CTRL05.00: Cover */
 BIT_DEF(COVER_ENABLE,					0x01, 0);
@@ -354,6 +375,17 @@ BIT_DEF(CALIBRATION_STATE_CALIBRATION_CRC,		0x02, 1);
  * Types
  */
 
+static const char * const clearpad_flash_status[] = {
+	[0] = "Success",
+	[1] = "(Reserved)",
+	[2] = "Flash Programming Not Enabled/Bad Command",
+	[3] = "Invalid Block Number",
+	[4] = "Block Not Erased",
+	[5] = "Erase Key Incorrect",
+	[6] = "Unknown Erase/Program Failure",
+	[7] = "Device has been reset",
+};
+
 enum clearpad_state_e {
 	SYN_STATE_INIT,
 	SYN_STATE_RUNNING,
@@ -455,6 +487,7 @@ static const char * const clearpad_flash_reason_name[] = {
 };
 
 enum clearpad_firmware_e {
+	HEADER_SIZE			= 0x100,
 	HEADER_VERSION_OFFSET		= 0x07,
 	HEADER_PRODUCT_ID_SIZE		= 10,
 };
@@ -504,22 +537,22 @@ enum firmware_container_id_const_e {
 };
 
 enum firmware_bootloader_version_const_e {
+	BV6	= 0x06,
 	BV7	= 0x10,
 };
 
 static const int clearpad_bootloader_version_dec[] = {
+	[BV6]	= 6,
 	[BV7]	= 7,
 };
 
 enum clearpad_flash_command_e {
 	SYN_FORCE_FLASH,
-	SYN_CONFIG_FLASH,
 	SYN_DEFAULT_FLASH,
 };
 
 static const char * const clearpad_flash_command_name[] = {
 	[SYN_FORCE_FLASH]	= "force",
-	[SYN_CONFIG_FLASH]	= "config",
 	[SYN_DEFAULT_FLASH]	= "default",
 };
 
@@ -725,7 +758,6 @@ struct clearpad_cover_t {
 	bool supported;
 	bool status;
 	bool enabled;
-	bool set_disp_size_to_win;
 	int win_top;
 	int win_bottom;
 	int win_right;
@@ -956,8 +988,10 @@ struct clearpad_t {
 	bool early_suspend; /* suspend mode has been set from early suspend */
 	bool irq_pending;
 	bool last_irq;
-	struct fb_t wakeup;
+
 	bool is_sol;
+
+	struct fb_t wakeup;
 };
 
 /*
@@ -2008,16 +2042,6 @@ end:
 	return rc;
 }
 
-/* need LOCK(&this->lock) */
-static void clearpad_set_cover_size(struct clearpad_cover_t *cover,
-		int width, int height)
-{
-	cover->win_left = 0;
-	cover->win_right = width;
-	cover->win_top = 0;
-	cover->win_bottom = height;
-}
-
 /*
  * Stamina (Report rate)
  */
@@ -2064,7 +2088,7 @@ static int clearpad_change_report_rate(struct clearpad_t *this)
 
 		rc = clearpad_put_bit(
 				SYNF(this, F01_RMI, CTRL,
-				     this->reg_offset.f01_ctrl00),
+					this->reg_offset.f01_ctrl00),
 				enable ? DEVICE_CONTROL_REPORT_RATE_MASK : 0,
 				DEVICE_CONTROL_REPORT_RATE_MASK);
 		if (rc) {
@@ -2078,8 +2102,8 @@ static int clearpad_change_report_rate(struct clearpad_t *this)
 
 		/* F54_ANALOG_CMD00: Analog Command */
 		rc = clearpad_put(SYNF(this, F54_ANALOG, COMMAND,
-					this->reg_offset.f54_cmd00),
-					ANALOG_COMMAND_FORCE_UPDATE_MASK);
+					  this->reg_offset.f54_cmd00),
+					  ANALOG_COMMAND_FORCE_UPDATE_MASK);
 		if (rc) {
 			LOGE(this, "failed to set force update\n");
 			goto exit;
@@ -2542,8 +2566,8 @@ static int clearpad_initialize(struct clearpad_t *this)
 	/* read device product id */
 	/* F01_RMI_QUERY11: Product ID Query */
 	rc = clearpad_get_block(SYNF(this, F01_RMI, QUERY,
-				this->reg_offset.f01_query11),
-				product_id, HEADER_PRODUCT_ID_SIZE);
+		this->reg_offset.f01_query11),
+		product_id, HEADER_PRODUCT_ID_SIZE);
 	if (rc)
 		goto end;
 	memcpy(info->product_id, product_id, HEADER_PRODUCT_ID_SIZE);
@@ -2556,20 +2580,42 @@ static int clearpad_initialize(struct clearpad_t *this)
 	/* F01_RMI_DATA00: Device Status */
 	rc = clearpad_get(SYNF(this, F01_RMI, DATA,
 		this->reg_offset.f01_data00),
-	&device_status);
+		&device_status);
 	if (rc)
 		goto end;
 
 	LOGI(this, "device status 0x%02x\n", device_status);
 
-	/* F34_FLASH_QUERY01: Bootloader Revision */
-	rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
-				this->reg_offset.f34_query01),
+	if (this->is_sol) {
+		/* F34_FLASH_QUERY00: Bootloader Revision */
+		rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
+				this->reg_offset.f34_query00),
 				bl_ver, SYN_DEVICE_BL_INFO_SIZE);
-	if (rc)
-		goto end;
+		if (rc)
+			goto end;
 
-	LOGI(this, "bootloader revision %d.%03d\n", bl_ver[1], bl_ver[0]);
+		/* Flash memory management, Version 1         */
+		/* Bootloader Revision is stored as character */
+		LOGI(this, "bl[0]:%c\n", bl_ver[0]);
+		LOGI(this, "bl[1]:%c\n", bl_ver[1]);
+		if (bl_ver[1] >= 0x30 && bl_ver[1] <= 0x39) {
+			/* change character to decimal */
+			bl_ver[1] -= 0x30;
+			bl_ver[0] = 0x00;	/* minor value is 0 */
+		}
+		LOGI(this, "bootloader revision %d.%03d\n", bl_ver[1], bl_ver[0]);
+	} else {
+		/* F34_FLASH_QUERY01: Bootloader Revision */
+		rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
+					this->reg_offset.f34_query01),
+					bl_ver, SYN_DEVICE_BL_INFO_SIZE);
+		if (rc)
+			goto end;
+
+		/* Flash memory management, Version 2       */
+		/* Bootloader Revision is stored as decimal */
+		LOGI(this, "bootloader revision %d.%03d\n", bl_ver[1], bl_ver[0]);
+	}
 
 	switch (BIT_GET(device_status, DEVICE_STATUS_CODE)) {
 	case DEVICE_STATUS_CODE_CONFIGURATION_CRC_FAILURE:
@@ -2579,17 +2625,11 @@ static int clearpad_initialize(struct clearpad_t *this)
 		memset(fw_info, 0, sizeof(fw_info));
 		break;
 	default:
-		rc = clearpad_get_block(
-			SYNF(this, F34_FLASH, CTRL,
-			this->reg_offset.f34_ctrl00), fw_info, 5);
-		if (rc)
-			goto end;
-
 		if (bl_ver[1] >= clearpad_bootloader_version_dec[BV7]) {
 			/* F34_FLASH_DATA00: Status */
 			rc = clearpad_get(SYNF(this, F34_FLASH, DATA,
-			this->reg_offset.f34_data00),
-					  &fw_status);
+					this->reg_offset.f34_data00),
+				&fw_status);
 			if (rc)
 				goto end;
 
@@ -2604,16 +2644,36 @@ static int clearpad_initialize(struct clearpad_t *this)
 			default:
 				break;
 			}
+			rc = clearpad_get_block(
+				SYNF(this, F34_FLASH, CTRL,
+				this->reg_offset.f34_ctrl00), fw_info,
+				FLASH_READ_FIRMWARE_INFO_SIZE_BL7X);
+			if (rc)
+				goto end;
+
+			info->customer_family = fw_info[0];
+			info->firmware_revision_major = fw_info[1];
+			info->firmware_revision_minor = fw_info[2];
+			info->firmware_revision_extra = fw_info[3];
+			info->analog_id = fw_info[4];
+			info->boot_loader_version_minor = bl_ver[0];
+			info->boot_loader_version_major = bl_ver[1];
+		} else if (bl_ver[1] >= clearpad_bootloader_version_dec[BV6]) {
+			rc = clearpad_get_block(SYNF(this, F34_FLASH, CTRL,
+				this->reg_offset.f34_ctrl00),
+				fw_info, FLASH_READ_FIRMWARE_INFO_SIZE_BL6X);
+			if (rc)
+				goto end;
+
+			info->customer_family = fw_info[0];
+			info->firmware_revision_major = fw_info[1];
+			info->firmware_revision_minor = fw_info[2];
+			info->firmware_revision_extra = fw_info[3];
+			info->boot_loader_version_minor = bl_ver[0];
+			info->boot_loader_version_major = bl_ver[1];
 		}
 		break;
 	}
-	info->customer_family = fw_info[0];
-	info->firmware_revision_major = fw_info[1];
-	info->firmware_revision_minor = fw_info[2];
-	info->firmware_revision_extra = fw_info[3];
-	info->analog_id = fw_info[4];
-	info->boot_loader_version_minor = bl_ver[0];
-	info->boot_loader_version_major = bl_ver[1];
 
 	/* overwrite default settings with actual chip settings */
 	clearpad_touch_config_dt_for_chip_id(this, this->chip_id);
@@ -2871,6 +2931,46 @@ void clearpad_parse_container(struct clearpad_t *this)
 	}
 }
 
+static void clearpad_parse_firmware(struct clearpad_t *this)
+{
+	const u8 *data;
+	struct clearpad_flash_t *f = &this->flash;
+
+	data = this->flash.fw->data;
+	LOGI(this, "data:%p\n", data);
+
+	/* Set up data block info */
+	f->data.length = le32_to_cpu(*(u32 *)(data + 8));
+	f->data.blocks = (f->data.length / 16) + !!(f->data.length % 16);
+	f->data.data = data + HEADER_SIZE;
+	f->data.pos = 0;
+	LOGI(this, "DATA: length=%x blocks=%x data=%p\n",
+		 f->data.length, f->data.blocks, f->data.data);
+
+	/* Set up configuration block info */
+	f->config.length = le32_to_cpu(*(u32 *)(data + 12));
+	f->config.blocks = (f->config.length / 16) + !!(f->config.length % 16);
+	f->config.data = data + HEADER_SIZE + f->data.length;
+	f->config.pos = 0;
+	LOGI(this, "CONFIG: length=%x blocks=%x data=%p\n",
+		 f->config.length, f->config.blocks, f->config.data);
+
+	/* family Rev major minor extra info */
+	f->customer_family =
+		*(data + f->data.length + HEADER_SIZE + CONFIG_CUSTOMER_FAMILY_OFFSET);
+	f->firmware_revision_major =
+		*(data + f->data.length + HEADER_SIZE + CONFIG_FIRMWARE_REVISION_MAJOR_OFFSET);
+	f->firmware_revision_minor =
+		*(data + f->data.length + HEADER_SIZE + CONFIG_FIRMWARE_REVISION_MINOR_OFFSET);
+	f->firmware_revision_extra =
+		*(data + f->data.length + HEADER_SIZE + CONFIG_FIRMWARE_REVISION_EXTRA_OFFSET);
+	LOGI(this,
+		"core config: family 0x%02x, rev 0x%02x.%02x.0x%02x\n",
+		f->customer_family, f->firmware_revision_major,
+		f->firmware_revision_minor, f->firmware_revision_extra);
+
+}
+
 static ssize_t clearpad_get_firmware(struct clearpad_t *this, char *filename)
 {
 	int rc;
@@ -2887,6 +2987,8 @@ static ssize_t clearpad_get_firmware(struct clearpad_t *this, char *filename)
 	f->format_version = f->fw->data[HEADER_VERSION_OFFSET];
 	if (f->format_version >= BV7) {
 		clearpad_parse_container(this);
+	} else if (f->format_version >= BV6) {
+		clearpad_parse_firmware(this);
 	} else {
 		HWLOGE(this, "bootloader version not supported\n");
 		rc = -ENODEV;
@@ -2922,7 +3024,9 @@ static int clearpad_get_pca_module_id(struct clearpad_t *this)
 			goto end;
 		}
 	}
-	HWLOGI(this, "no module id in pca\n");
+	HWLOGI(this, "no module id in pca data:%x ic:%x chip:%x module:%x\n",
+		pca_block_data[PCA_DATA], pca_block_data[PCA_IC],
+		pca_block_data[PCA_CHIP], pca_block_data[PCA_MODULE]);
 	rc = -EINVAL;
 end:
 	return rc;
@@ -2961,14 +3065,6 @@ static int clearpad_judge_firmware_flash(struct clearpad_t *this,
 	int blank_block;
 	char filename[SYN_STRING_LENGTH] = "";
 	u8 fw_info[SYN_PCA_BLOCK_SIZE] = {PCA_FW_INFO, SYN_CLEARPAD_VENDOR};
-
-	if (this->device_info.boot_loader_version_major <
-			clearpad_bootloader_version_dec[BV7]) {
-		rc = -ENODEV;
-		HWLOGE(this, "illegal boot loader revision %x\n",
-		     this->device_info.boot_loader_version_major);
-		goto end;
-	}
 
 	if (!this->device_info.customer_family)
 		HWLOGI(this, "device is broken\n");
@@ -3048,7 +3144,284 @@ end:
 	return rc;
 }
 
-static int clearpad_flash_enable(struct clearpad_t *this)
+/* for Bootloader v6.0 */
+static int clearpad_flash_enable_bl_v6_0(struct clearpad_t *this)
+{
+	int rc;
+	u8 buf[SYN_DEVICE_BL_INFO_SIZE];
+
+	/* read bootloader id */
+	rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
+			this->reg_offset.f34_query00),
+			buf, sizeof(buf));
+	LOG_CHECK(this, "rc=%d\n", rc);
+	if (rc)
+		goto end;
+
+	/* write bootloader id to block data */
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+				this->reg_offset.f34_data01),
+				buf, sizeof(buf));
+	LOG_CHECK(this, "rc=%d\n", rc);
+	if (rc)
+		goto end;
+
+	clearpad_set_delay(10);
+
+	/* issue a flash program enable */
+	this->flash.enter_bootloader_mode = true;
+	rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data02),
+			FLASH_CONTROL_ENABLE_FLASH_PROGRAMMING);
+	LOG_CHECK(this, "rc=%d\n", rc);
+	if (rc)
+		goto end;
+
+	this->state = SYN_STATE_FLASH_ENABLE;
+	clearpad_set_delay(100);
+
+	clearpad_set_irq(this, true);
+
+end:
+	return rc;
+}
+
+static int clearpad_flash_program_bl_v6_0(struct clearpad_t *this)
+{
+	struct clearpad_flash_t *flash = &this->flash;
+	int rc;
+	u8 buf[SYN_DEVICE_BL_INFO_SIZE];
+
+	/* make sure that we are in programming mode and there are no issues */
+	rc = clearpad_get(SYNF(this, F34_FLASH, DATA,
+		this->reg_offset.f34_data03), buf);
+	if (rc) {
+		HWLOGE(this, "failed to get flash programming status\n");
+		goto end;
+	}
+	if (!(BIT_GET(buf[0], STATUS_BL_MODE))) {
+		HWLOGE(this, "failed enabling flash (%s)\n",
+			      NAME_OF(clearpad_flash_status_name,
+				      BIT_GET(buf[0], STATUS_FLASH_STATUS)));
+		rc = -EIO;
+		goto end;
+	}
+
+	HWLOGI(this, "flashing enabled\n");
+
+	if (this->state == SYN_STATE_FLASH_ENABLE) {
+		/* PDT may have changed, re-read */
+		rc = clearpad_read_pdt(this);
+		if (rc) {
+			HWLOGE(this, "failed to read pdt\n");
+			goto end;
+		}
+	}
+
+	/* read bootloader id */
+	rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
+			this->reg_offset.f34_query00), buf, sizeof(buf));
+	if (rc)
+		goto end;
+
+	/* write bootloader id to block data */
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+		this->reg_offset.f34_data01), buf, sizeof(buf));
+	if (rc)
+		goto end;
+
+	if (this->state == SYN_STATE_FLASH_ENABLE &&
+	    (flash->command == SYN_FORCE_FLASH ||
+	     flash->command == SYN_DEFAULT_FLASH)) {
+		rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+				this->reg_offset.f34_data02),
+				FLASH_CONTROL_ERASE_ALL);
+		if (rc)
+			goto end;
+		this->state = SYN_STATE_FLASH_PROGRAM;
+	} else if ((this->state == SYN_STATE_FLASH_PROGRAM &&
+		    (flash->command == SYN_FORCE_FLASH ||
+		     flash->command == SYN_DEFAULT_FLASH))) {
+		rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+				this->reg_offset.f34_data02),
+				FLASH_CONTROL_ERASE_CONFIGURATION);
+		if (rc)
+			goto end;
+		this->state = SYN_STATE_FLASH_ERASE;
+	} else {
+		HWLOGE(this, "invalid state(%s) for command(%s)\n",
+			NAME_OF(clearpad_state_name, this->state),
+			NAME_OF(clearpad_flash_command_name, flash->command));
+		rc = -EINVAL;
+		goto end;
+	}
+
+	HWLOGI(this, "firmware erasing\n");
+end:
+	return rc;
+}
+
+static int clearpad_flash_update_bl_v6_0(struct clearpad_t *this)
+{
+	struct clearpad_flash_t *flash = &this->flash;
+	int rc, len;
+	const u8 *data;
+	u8 buf, pid;
+	struct clearpad_flash_block_t *object;
+	enum clearpad_state_e finish_state;
+	u8 pos[2];
+
+	if (this->state == SYN_STATE_FLASH_ERASE &&
+	    (flash->command == SYN_FORCE_FLASH ||
+	     flash->command == SYN_DEFAULT_FLASH)) {
+		object = &(&this->flash)->data;
+		pid = PID_CORE_CODE;
+		finish_state = SYN_STATE_FLASH_DATA;
+	} else if ((this->state == SYN_STATE_FLASH_DATA &&
+		    (flash->command == SYN_FORCE_FLASH ||
+		     flash->command == SYN_DEFAULT_FLASH))) {
+		object = &(&this->flash)->config;
+		pid = PID_CORE_CONFIGURATION;
+		finish_state = SYN_STATE_FLASH_CONFIG;
+	} else {
+		HWLOGE(this, "invalid state(%s) for command(%s)\n",
+			NAME_OF(clearpad_state_name, this->state),
+			NAME_OF(clearpad_flash_command_name, flash->command));
+		rc = -EINVAL;
+		goto end;
+	}
+
+	if (object->pos > 0)
+		goto write_block_data;
+
+	/* make sure that we are in programming mode and there are no issues */
+	rc = clearpad_get(SYNF(this, F34_FLASH, DATA,
+		this->reg_offset.f34_data03), &buf);
+	if (rc) {
+		HWLOGE(this, "failed to get flash programming status\n");
+		goto end;
+	}
+
+	if (!(BIT_GET(buf, STATUS_BL_MODE))) {
+		HWLOGE(this, "failed flashing in %s (%s)\n",
+		     NAME_OF(clearpad_state_name, this->state),
+		     NAME_OF(clearpad_flash_status_name,
+			     BIT_GET(buf, STATUS_FLASH_STATUS)));
+		rc = -EIO;
+		goto end;
+	}
+
+	object->payload_length = SYN_PAYLOAD_LENGTH;
+
+	/* block # low and high byte */
+	pos[0] = object->pos & 0xff;
+	pos[1] = (object->pos >> 8) & 0xff;
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data00), pos, 2);
+	if (rc)
+		goto end;
+
+write_block_data:
+	data = object->data + object->pos * 16;
+	len = object->length - object->pos * 16;
+	if (len > 16)
+		len = 16;
+
+	/* write block data */
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+		this->reg_offset.f34_data01), data, len);
+	if (rc)
+		goto end;
+	/* issue a write data block command */
+	if (pid == PID_CORE_CODE)
+		rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+				this->reg_offset.f34_data02),
+				FLASH_CONTROL_WRITE_FIRMWARE_BLOCK);
+	else
+		rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+				this->reg_offset.f34_data02),
+				FLASH_CONTROL_WRITE_CONFIGURATION_BLOCK);
+	if (rc)
+		goto end;
+
+	if (object->pos % 100 == 0)
+		LOGI(this, "wrote %d blocks\n", object->pos);
+
+	/* if we've reached the end of the data/configuration flashing */
+	if (++object->pos == object->blocks) {
+		HWLOGI(this, "flash finished on %s\n",
+			      NAME_OF(clearpad_state_name, this->state));
+		this->state = finish_state;
+	}
+end:
+	return rc;
+}
+
+static int clearpad_flash_disable_bl_v6_0(struct clearpad_t *this)
+{
+	int rc;
+	u8 buf;
+
+	/* make sure that we are in programming mode and there are no issues */
+	rc = clearpad_get(SYNF(this, F34_FLASH, DATA,
+		this->reg_offset.f34_data03), &buf);
+	if (rc)
+		goto end;
+
+	if (!(BIT_GET(buf, STATUS_BL_MODE))) {
+		HWLOGE(this, "failed flashing config (%s)\n",
+			      NAME_OF(clearpad_flash_status_name,
+				      BIT_GET(buf, STATUS_FLASH_STATUS)));
+		rc = -EIO;
+		goto end;
+	}
+
+	clearpad_set_delay(SYN_WAIT_TIME_AFTER_REGISTER_ACCESS);
+
+	/* send a reset to the device to complete the flash procedure */
+	clearpad_reset(this, SYN_SWRESET, __func__);
+
+	HWLOGI(this, "flashing finished, resetting\n");
+	this->state = SYN_STATE_FLASH_DISABLE;
+end:
+	return rc;
+}
+
+/* need LOCK(&this->lock) */
+static int clearpad_flash_bl_v6_0(struct clearpad_t *this)
+{
+	int rc = 0;
+
+	switch (this->state) {
+	case SYN_STATE_FLASH_IMAGE_SET:
+		rc = clearpad_flash_enable_bl_v6_0(this);
+		break;
+	case SYN_STATE_FLASH_ENABLE:
+	case SYN_STATE_FLASH_PROGRAM:
+		rc = clearpad_flash_program_bl_v6_0(this);
+		break;
+	case SYN_STATE_FLASH_ERASE:
+	case SYN_STATE_FLASH_DATA:
+		rc = clearpad_flash_update_bl_v6_0(this);
+		break;
+	case SYN_STATE_FLASH_CONFIG:
+		rc = clearpad_flash_disable_bl_v6_0(this);
+		clearpad_firmware_reset(this);
+		break;
+	case SYN_STATE_FLASH_DISABLE:
+		HWLOGE(this, "should be handled by clearpad_initialize\n");
+		break;
+	default:
+		HWLOGE(this, "invalid state(%s)",
+			      NAME_OF(clearpad_state_name, this->state));
+		rc = -EINVAL;
+		break;
+	}
+	return rc;
+}
+
+/* for Bootloader v7.x */
+static int clearpad_flash_enable_bl_v7_x(struct clearpad_t *this)
 {
 	int rc;
 	u8 buf[SYN_SINGLE_TRANSACTION_SIZE] = {
@@ -3058,9 +3431,9 @@ static int clearpad_flash_enable(struct clearpad_t *this)
 	/* set device configured bit */
 	/* F01_RMI_CTRL00: Device Control */
 	rc = clearpad_put_bit(SYNF(this, F01_RMI, CTRL,
-		this->reg_offset.f01_ctrl00),
-		DEVICE_CONTROL_CONFIGURED_MASK,
-		DEVICE_CONTROL_CONFIGURED_MASK);
+				  this->reg_offset.f01_ctrl00),
+			      DEVICE_CONTROL_CONFIGURED_MASK,
+			      DEVICE_CONTROL_CONFIGURED_MASK);
 	if (rc) {
 		HWLOGE(this, "failed to set device configured bit\n");
 		goto end;
@@ -3069,8 +3442,8 @@ static int clearpad_flash_enable(struct clearpad_t *this)
 
 	/* read flash program key */
 	rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
-		this->reg_offset.f34_query01),
-		buf + SYN_FP_KEY_OFFSET, 2);
+			this->reg_offset.f34_query01),
+			buf + SYN_FP_KEY_OFFSET, 2);
 	if (rc) {
 		HWLOGE(this, "failed to read flash program key\n");
 		goto end;
@@ -3079,8 +3452,9 @@ static int clearpad_flash_enable(struct clearpad_t *this)
 	/* issue command to enter bootloader mode with key*/
 	this->flash.enter_bootloader_mode = true;
 	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
-		this->reg_offset.f34_data01),
-		buf, sizeof(buf));
+			this->reg_offset.f34_data01),
+			buf, sizeof(buf));
+
 	if (rc) {
 		HWLOGE(this, "failed to enter bootloader mode\n");
 		goto end;
@@ -3092,7 +3466,7 @@ end:
 	return rc;
 }
 
-static int clearpad_flash_program(struct clearpad_t *this)
+static int clearpad_flash_program_bl_v7_x(struct clearpad_t *this)
 {
 	struct clearpad_flash_t *flash = &this->flash;
 	int rc;
@@ -3128,8 +3502,8 @@ static int clearpad_flash_program(struct clearpad_t *this)
 
 	/* read flash program key */
 	rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
-		this->reg_offset.f34_query01),
-		buf + SYN_FP_KEY_OFFSET, 2);
+				this->reg_offset.f34_query01),
+				buf + SYN_FP_KEY_OFFSET, 2);
 	if (rc) {
 		HWLOGE(this, "failed to flash program key\n");
 		goto end;
@@ -3140,9 +3514,7 @@ static int clearpad_flash_program(struct clearpad_t *this)
 	     flash->command == SYN_DEFAULT_FLASH)) {
 		buf[0] = PID_CORE_CODE;
 		this->state = SYN_STATE_FLASH_PROGRAM;
-	} else if ((this->state == SYN_STATE_FLASH_ENABLE &&
-		    flash->command == SYN_CONFIG_FLASH) ||
-		   (this->state == SYN_STATE_FLASH_PROGRAM &&
+	} else if ((this->state == SYN_STATE_FLASH_PROGRAM &&
 		    (flash->command == SYN_FORCE_FLASH ||
 		     flash->command == SYN_DEFAULT_FLASH))) {
 		buf[0] = PID_CORE_CONFIGURATION;
@@ -3157,7 +3529,7 @@ static int clearpad_flash_program(struct clearpad_t *this)
 
 	/* issue command to erase partition with key*/
 	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
-			this->reg_offset.f34_data01), buf, sizeof(buf));
+				this->reg_offset.f34_data01), buf, sizeof(buf));
 	if (rc) {
 		HWLOGE(this, "failed to erase partition with key\n");
 		goto end;
@@ -3168,12 +3540,13 @@ end:
 	return rc;
 }
 
-static int clearpad_flash_update(struct clearpad_t *this)
+static int clearpad_flash_update_bl_v7_x(struct clearpad_t *this)
 {
 	struct clearpad_flash_t *flash = &this->flash;
 	int rc, len;
-	u8 buf, block_buf[3], pid;
 	const u8 *data;
+	u8 buf, pid;
+	u8 block_buf[3];
 	u16 block_num = 0;
 	struct clearpad_flash_block_t *object;
 	enum clearpad_state_e finish_state;
@@ -3184,9 +3557,7 @@ static int clearpad_flash_update(struct clearpad_t *this)
 		object = &(&this->flash)->data;
 		pid = PID_CORE_CODE;
 		finish_state = SYN_STATE_FLASH_DATA;
-	} else if ((this->state == SYN_STATE_FLASH_ERASE &&
-		    flash->command == SYN_CONFIG_FLASH) ||
-		   (this->state == SYN_STATE_FLASH_DATA &&
+	} else if ((this->state == SYN_STATE_FLASH_DATA &&
 		    (flash->command == SYN_FORCE_FLASH ||
 		     flash->command == SYN_DEFAULT_FLASH))) {
 		object = &(&this->flash)->config;
@@ -3224,8 +3595,8 @@ static int clearpad_flash_update(struct clearpad_t *this)
 
 	/* read block size */
 	rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
-		this->reg_offset.f34_query03),
-		block_buf, 3);
+				this->reg_offset.f34_query03),
+				block_buf, 3);
 	if (rc) {
 		HWLOGE(this, "unable to read block size of fw\n");
 		goto end;
@@ -3253,7 +3624,7 @@ static int clearpad_flash_update(struct clearpad_t *this)
 
 	/* write block num */
 	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
-		this->reg_offset.f34_data02),
+					this->reg_offset.f34_data02),
 					(u8 *)&block_num, 2);
 	if (rc) {
 		HWLOGE(this, "unable to write block number\n");
@@ -3310,20 +3681,17 @@ end:
 	return rc;
 }
 
-static int clearpad_flash_disable(struct clearpad_t *this)
+static int clearpad_flash_disable_bl_v7_x(struct clearpad_t *this)
 {
 	int rc;
 	u8 buf;
 
 	/* make sure that we are in programming mode and there are no issues */
-	rc = clearpad_get(
-			SYNF(this, F34_FLASH, DATA,
-				this->reg_offset.f34_data00),
-			&buf);
-	if (rc) {
-		HWLOGE(this, "failed to get flash programming status\n");
+	rc = clearpad_get(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data00), &buf);
+	if (rc)
 		goto end;
-	}
+
 	if (!(BIT_GET(buf, STATUS_BL_MODE))) {
 		HWLOGE(this, "failed flashing config (%s)\n",
 			      NAME_OF(clearpad_flash_status_name,
@@ -3344,27 +3712,24 @@ end:
 }
 
 /* need LOCK(&this->lock) */
-static int clearpad_flash(struct clearpad_t *this)
+static int clearpad_flash_bl_v7_x(struct clearpad_t *this)
 {
 	int rc = 0;
 
-	LOGD(this, "flash state=%s\n",
-	     NAME_OF(clearpad_state_name, this->state));
-
 	switch (this->state) {
 	case SYN_STATE_FLASH_IMAGE_SET:
-		rc = clearpad_flash_enable(this);
+		rc = clearpad_flash_enable_bl_v7_x(this);
 		break;
 	case SYN_STATE_FLASH_ENABLE:
 	case SYN_STATE_FLASH_PROGRAM:
-		rc = clearpad_flash_program(this);
+		rc = clearpad_flash_program_bl_v7_x(this);
 		break;
 	case SYN_STATE_FLASH_ERASE:
 	case SYN_STATE_FLASH_DATA:
-		rc = clearpad_flash_update(this);
+		rc = clearpad_flash_update_bl_v7_x(this);
 		break;
 	case SYN_STATE_FLASH_CONFIG:
-		rc = clearpad_flash_disable(this);
+		rc = clearpad_flash_disable_bl_v7_x(this);
 		clearpad_firmware_reset(this);
 		break;
 	case SYN_STATE_FLASH_DISABLE:
@@ -3376,7 +3741,21 @@ static int clearpad_flash(struct clearpad_t *this)
 		rc = -EINVAL;
 		break;
 	}
+	return rc;
+}
 
+/* need LOCK(&this->lock) */
+static int clearpad_flash(struct clearpad_t *this)
+{
+	int rc = 0;
+
+	LOGD(this, "flash state=%s\n",
+	     NAME_OF(clearpad_state_name, this->state));
+
+	if (this->is_sol)
+		rc = clearpad_flash_bl_v6_0(this);
+	else
+		rc = clearpad_flash_bl_v7_x(this);
 	if (rc) {
 		HWLOGE(this, "failed during flash (%s), rc = %d\n",
 		     NAME_OF(clearpad_state_name, this->state), rc);
@@ -4915,10 +5294,6 @@ static ssize_t clearpad_state_show(struct device *dev,
 								PAGE_SIZE))
 		snprintf(buf, PAGE_SIZE,
 			"%d", this->cover.win_left);
-	else if (!strncmp(attr->attr.name, __stringify(disp_size_to_cover_win),
-								PAGE_SIZE))
-		snprintf(buf, PAGE_SIZE,
-			"%d", this->cover.set_disp_size_to_win);
 	else if (!strncmp(attr->attr.name, __stringify(stamina_mode),
 								PAGE_SIZE))
 		snprintf(buf, PAGE_SIZE,
@@ -5199,9 +5574,6 @@ static ssize_t clearpad_fwflash_store(struct device *dev,
 	if (!strncmp(request, command[SYN_FORCE_FLASH], PAGE_SIZE)) {
 		HWLOGI(this, "start force firmware flash, id=%x\n", id);
 		rc = clearpad_fwflash_core(this, SYN_FORCE_FLASH, id);
-	} else if (!strncmp(request, command[SYN_CONFIG_FLASH], PAGE_SIZE)) {
-		HWLOGI(this, "start firmware config\n");
-		rc = clearpad_fwflash_core(this, SYN_CONFIG_FLASH, 0);
 	} else if (!strncmp(request, command[SYN_DEFAULT_FLASH], PAGE_SIZE)) {
 		HWLOGI(this, "start firmware config & data\n");
 		rc = clearpad_fwflash_core(this, SYN_DEFAULT_FLASH, 0);
@@ -5720,67 +6092,6 @@ err_in_check_support:
 	return size;
 }
 
-static ssize_t clearpad_set_disp_size_to_cover_win_store(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t size)
-{
-	int rc = 0;
-	bool is_disp_size_to_cover_win = !sysfs_streq(buf, "0");
-	struct clearpad_t *this = dev_get_drvdata(dev);
-	const char *session = "set_disp_size_to_cover_win";
-
-	if (!this->cover.supported) {
-		LOGI(this, "cover mode is not supported");
-		return size;
-	}
-
-	if (is_disp_size_to_cover_win) {
-		int width = this->extents.preset_x_max + 1;
-		int height = this->extents.preset_y_max + 1;
-
-		LOGI(this,
-			"set display resolution (%d, %d) to cover window size.",
-			width, height);
-
-		LOCK(&this->lock);
-		clearpad_set_cover_size(&this->cover, width, height);
-		this->cover.set_disp_size_to_win = true;
-	} else {
-		LOCK(&this->lock);
-		this->cover.set_disp_size_to_win = false;
-	}
-	UNLOCK(&this->lock);
-
-	if (!this->post_probe.done) {
-		LOGI(this, "post_probe hasn't finished, will apply later\n");
-		return size;
-	}
-
-	if (!this->dev_active || this->interrupt.count == 0) {
-		LOGI(this, "avoid to access I2C before waiting %d ms delay\n",
-			this->reset.delay_for_powerup_ms);
-		return size;
-	}
-
-	rc = clearpad_ctrl_session_begin(this, session);
-	if (rc) {
-		LOGI(this, "not powered, will be applied later\n");
-		return size;
-	}
-
-	LOCK(&this->lock);
-	if (this->cover.enabled)
-		rc = clearpad_set_cover_window(this);
-	UNLOCK(&this->lock);
-
-	if (rc)
-		LOGE(this, "failed to set cover window for device\n");
-
-	clearpad_ctrl_session_end(this, session);
-
-	return size;
-}
-
 static ssize_t clearpad_cover_win_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size)
@@ -6012,9 +6323,6 @@ static struct device_attribute clearpad_sysfs_attrs[] = {
 	__ATTR(cover_mode_enabled, S_IRUGO | S_IWUSR,
 				clearpad_state_show,
 				clearpad_cover_mode_enabled_store),
-	__ATTR(cover_win_set_disp_size, S_IRUGO | S_IWUSR,
-				clearpad_state_show,
-				clearpad_set_disp_size_to_cover_win_store),
 	__ATTR(cover_win_top, S_IRUGO | S_IWUSR,
 				clearpad_state_show,
 				clearpad_cover_win_store),
@@ -7040,76 +7348,11 @@ static void clearpad_analog_test(struct clearpad_t *this,
 			if (rc)
 				goto err_set_irq_xy;
 		}
-	} else if (this->chip_id != SYN_CHIP_3330) {
+	} else if (this->chip_id == SYN_CHIP_3500) {
 		if (mode == F54_RAW_CAP_RX_COUPLING_REPORT ||
 			mode == F54_HIGH_RESISTANCE_REPORT ||
 			mode == F54_TRX_TO_TRX_SHORT_2_REPORT) {
 			switch (fw_rev_extra) {
-			case 0x00:
-				rc = clearpad_get(
-				SYNF(this, F54_ANALOG, QUERY,
-				this->reg_offset.f54_query38), buf);
-				if (rc)
-					goto err_set_irq_xy;
-				if (buf[0] != 0) {
-					/* F54_ANALOG_CTRL149: Trans CBC 2 */
-					rc = clearpad_put_bit(
-					SYNF(this, F54_ANALOG, CTRL,
-					this->reg_offset.f54_ctrl149), 0,
-					TRANS_CBC_2_TRANS_CBC_GLOBAL_CAP_MASK);
-					if (rc)
-						goto err_set_irq_xy;
-				}
-				/* F54_ANALOG_CTRL88: Analog Control 1 */
-				rc = clearpad_put_bit(
-				SYNF(this, F54_ANALOG, CTRL,
-				this->reg_offset.f54_ctrl88), 0,
-				ANALOG_CONTROL_1_CBC_XMTR_CARRIER_SELECT_MASK);
-				if (rc)
-					goto err_set_irq_xy;
-				/* F54_ANALOG_CTRL57: 0D CBC Settings */
-				rc = clearpad_put_bit(
-				SYNF(this, F54_ANALOG, CTRL,
-				this->reg_offset.f54_ctrl57), 0,
-				CBC_SETTINGS_XMTR_CARRIER_SELECT_MASK);
-				if (rc)
-					goto err_set_irq_xy;
-				/* F54_ANALOG_CTRL41:
-				   Multimetric Noise Control*/
-				rc = clearpad_put_bit(
-				SYNF(this, F54_ANALOG, CTRL,
-				this->reg_offset.f54_ctrl41),
-				MULTIMETRIC_NOISE_CTRL_NO_SIGNAL_CLARITY_MASK,
-				MULTIMETRIC_NOISE_CTRL_NO_SIGNAL_CLARITY_MASK);
-				if (rc)
-					goto err_set_irq_xy;
-				break;
-			case 0x01:
-			case 0x02:
-				/* F54_ANALOG_CTRL149: Trans CBC 2 */
-				rc = clearpad_put_bit(
-				SYNF(this, F54_ANALOG, CTRL,
-				this->reg_offset.f54_ctrl149), 0,
-				TRANS_CBC_2_TRANS_CBC_GLOBAL_CAP_MASK);
-				if (rc)
-					goto err_set_irq_xy;
-				/* F54_ANALOG_CTRL88: Analog Control 1 */
-				rc = clearpad_put_bit(
-				SYNF(this, F54_ANALOG, CTRL,
-				this->reg_offset.f54_ctrl88), 0,
-				ANALOG_CONTROL_1_CBC_XMTR_CARRIER_SELECT_MASK);
-				if (rc)
-					goto err_set_irq_xy;
-				/* F54_ANALOG_CTRL41:
-				   Multimetric Noise Control*/
-				rc = clearpad_put_bit(
-				SYNF(this, F54_ANALOG, CTRL,
-				this->reg_offset.f54_ctrl41),
-				MULTIMETRIC_NOISE_CTRL_NO_SIGNAL_CLARITY_MASK,
-				MULTIMETRIC_NOISE_CTRL_NO_SIGNAL_CLARITY_MASK);
-				if (rc)
-					goto err_set_irq_xy;
-				break;
 			case 0x03:
 				/* F54_ANALOG_CTRL149: Trans CBC 2 */
 				rc = clearpad_put_bit(
@@ -7144,6 +7387,7 @@ static void clearpad_analog_test(struct clearpad_t *this,
 
 				break;
 			default:
+				HWLOGE(this, "firmware is not supported\n");
 				break;
 			}
 			/* F54_ANALOG_CMD00: Analog Command */
@@ -7154,8 +7398,8 @@ static void clearpad_analog_test(struct clearpad_t *this,
 			if (rc)
 				goto err_set_irq_xy;
 			rc = clearpad_get(SYNF(this, F54_ANALOG, COMMAND,
-				this->reg_offset.f54_cmd00),
-									buf);
+					this->reg_offset.f54_cmd00),
+				buf);
 			if (rc)
 				goto err_set_irq_xy;
 			for (i = 0;
@@ -8036,12 +8280,10 @@ static void clearpad_debug_info(struct clearpad_t *this)
 	HWLOGI(this, "[glove] supported=%s enabled=%s\n",
 	       this->glove.supported ? "true" : "false",
 	       this->glove.enabled ? "true" : "false");
-	HWLOGI(this, "[cover] supported=%s status=%s enabled=%s "
-		"set_disp_size_to_win=%s\n",
+	HWLOGI(this, "[cover] supported=%s status=%s enabled=%s\n",
 	       this->cover.supported ? "true" : "false",
 	       this->cover.status ? "true" : "false",
-	       this->cover.enabled ? "true" : "false",
-	       this->cover.set_disp_size_to_win ? "true" : "false");
+	       this->cover.enabled ? "true" : "false");
 	HWLOGI(this, INDENT "win top=%d bottom=%d right=%d left=%d\n",
 	       this->cover.win_top, this->cover.win_bottom,
 	       this->cover.win_right, this->cover.win_left);
@@ -8065,7 +8307,7 @@ static void clearpad_debug_info(struct clearpad_t *this)
 	       this->stamina.doze_holdoff.default_time,
 	       this->stamina.doze_holdoff.glove_mode_time,
 	       this->stamina.doze_holdoff.cover_mode_time);
-	HWLOGI(this, INDENT "[early unblank] done=%s early_done=%s\n",
+	HWLOGI(this, "[early unblank] done=%s early_done=%s\n",
 	       this->wakeup.unblank_done ? "true" : "false",
 	       this->wakeup.unblank_early_done ? "true" : "false");
 }
@@ -8242,16 +8484,6 @@ static ssize_t clearpad_debug_hwtest_write(struct file *file,
 			clearpad_ctrl_session_end(this, session);
 		}
 		break;
-	case DEBUG_COMMAND('F', 'C'):
-		/* FC - FW config update */
-		HWLOGI(this, "start config flash\n");
-		if (clearpad_ctrl_session_begin(this, session) == 0) {
-			LOCK(&this->lock);
-			rc = clearpad_fwflash_core(this, SYN_CONFIG_FLASH, 0);
-			UNLOCK(&this->lock);
-			clearpad_ctrl_session_end(this, session);
-		}
-		break;
 	case DEBUG_COMMAND('G', 'N'):
 	case DEBUG_COMMAND('C', '0'):
 		/* GN/C0 - get normal calibration result */
@@ -8380,20 +8612,54 @@ end:
 	return rc;
 }
 
+/* for Bootloader v6.0 */
 /* need LOCK(&this->lock) */
-static int clearpad_read_pca_block(struct clearpad_t *this,
+static int clearpad_read_pca_block_bl_v6_0(struct clearpad_t *this,
+				  u16 block_num, u8 *data)
+{
+	int rc;
+	u16 block;
+
+	block = block_num |
+		(FLASH_DATA_CONFIGURATION_AREA_SELECT_PERM <<
+		 FLASH_DATA_CONFIGURATION_AREA_SELECT_SHIFT);
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data00),
+			(u8 *)&block, 2);
+	if (rc) {
+		HWLOGE(this, "set block number error\n");
+		goto end;
+	}
+
+	/* issue read configuration block command */
+	rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data02),
+			FLASH_CONTROL_READ_CONFIGURATION_BLOCK);
+	if (rc) {
+		HWLOGE(this, "issue config error\n");
+		goto end;
+	}
+
+	/* read data block */
+	rc = clearpad_get_block(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data01),
+			data, SYN_PCA_BLOCK_SIZE);
+	if (rc) {
+		HWLOGE(this, "read data error\n");
+		goto end;
+	}
+
+end:
+	return rc;
+}
+
+/* for Bootloader v7.x */
+/* need LOCK(&this->lock) */
+static int clearpad_read_pca_block_bl_v7_x(struct clearpad_t *this,
 				  u16 block_num, u8 *data)
 {
 	int rc;
 	u16 payload_len = SYN_PAYLOAD_LENGTH;
-
-	if (this->device_info.boot_loader_version_major <
-	    clearpad_bootloader_version_dec[BV7]) {
-		rc = -ENODEV;
-		HWLOGE(this, "illegal boot loader revision %x\n",
-			    this->device_info.boot_loader_version_major);
-		goto end;
-	}
 
 	/* write partition id */
 	rc = clearpad_put(
@@ -8454,12 +8720,167 @@ static int clearpad_read_pca_block(struct clearpad_t *this,
 		HWLOGE(this, "read pca block error\n");
 		goto end;
 	}
+
 end:
 	return rc;
 }
 
 /* need LOCK(&this->lock) */
-static int clearpad_write_pca_block(struct clearpad_t *this,
+static int clearpad_read_pca_block(struct clearpad_t *this,
+				  u16 block_num, u8 *data)
+{
+	int rc;
+
+	if (this->is_sol)
+		rc = clearpad_read_pca_block_bl_v6_0(this, block_num, data);
+	else
+		rc = clearpad_read_pca_block_bl_v7_x(this, block_num, data);
+	if (rc)
+		HWLOGE(this, "failed pca read rc = %d\n", rc);
+	return rc;
+}
+
+/* for Bootloader v6.0 */
+/* need LOCK(&this->lock) */
+static int clearpad_write_pca_block_bl_v6_0(struct clearpad_t *this,
+				  u16 block_num, u8 *data)
+{
+	int rc;
+	u16 block;
+	u8 buf[2];
+
+	/* change to bootloader mode start */
+	this->flash.enter_bootloader_mode = true;
+
+	/* change to bootloader mode start */
+	/* read bootloader id */
+	rc = clearpad_get_block(SYNF(this, F34_FLASH, QUERY,
+			this->reg_offset.f34_query00),
+			buf, sizeof(buf));
+	if (rc) {
+		HWLOGE(this, "get id error\n");
+		goto end;
+	}
+
+	/* write bootloader id to block data */
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data01),
+			buf, sizeof(buf));
+	if (rc) {
+		HWLOGE(this, "write id error\n");
+		goto end;
+	}
+
+	clearpad_prepare_for_interrupt(this, &this->interrupt.for_F34,
+				       "F34_FLASH_DATA02 for write pca");
+
+	/* issue a flash program enable */
+	rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data02),
+			FLASH_CONTROL_ENABLE_FLASH_PROGRAMMING);
+	if (rc) {
+		HWLOGE(this, "issue config error\n");
+		clearpad_undo_prepared_interrupt(this,
+			&this->interrupt.for_F34,
+			"F34_FLASH_DATA02 for write pca");
+		goto end;
+	}
+
+	UNLOCK(&this->lock);
+	rc = clearpad_wait_for_interrupt(this, &this->interrupt.for_F34,
+						this->interrupt.wait_ms);
+	if (rc) {
+		HWLOGE(this, "wait for interrupt status failed %d\n", rc);
+		LOCK(&this->lock);
+		goto err_exit_bl;
+	}
+	LOCK(&this->lock);
+
+	/* reread PDT if it was changed. On success, driver can reset */
+	rc = clearpad_read_pdt(this);
+	if (rc) {
+		HWLOGE(this, "set pdt error\n");
+		goto err_exit_bl;
+	}
+
+	/* make sure that we are in programming mode and there are no issues */
+	rc = clearpad_get(SYNF(this, F34_FLASH, DATA,
+		this->reg_offset.f34_data03),
+		buf);
+	if (rc) {
+		HWLOGE(this, "get mode error\n");
+		goto end;
+	}
+
+	if (!(BIT_GET(buf[0], FLASH_STATUS_PROGRAM_ENABLED))) {
+		HWLOGE(this, "failed enabling flash (%s)\n",
+			clearpad_flash_status[buf[0] & 7]);
+		rc = -EIO;
+		goto end;
+	}
+	/* changing finished */
+
+	block = block_num |
+		(FLASH_DATA_CONFIGURATION_AREA_SELECT_PERM <<
+		 FLASH_DATA_CONFIGURATION_AREA_SELECT_SHIFT);
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data00),
+			(u8 *)&block, 2);
+	if (rc) {
+		HWLOGE(this, "set block offset error\n");
+		goto err_exit_bl;
+	}
+
+	/* write block data */
+	rc = clearpad_put_block(SYNF(this, F34_FLASH, DATA,
+				this->reg_offset.f34_data01),
+				data, SYN_PCA_BLOCK_SIZE);
+	if (rc) {
+		dev_err(&this->pdev->dev,
+			"%s: set data error\n", __func__);
+		goto end;
+	}
+
+	clearpad_prepare_for_interrupt(this, &this->interrupt.for_F34,
+				       "F34_FLASH_DATA02 for write pca");
+
+	/* issue a write configuration block command */
+	rc = clearpad_put(SYNF(this, F34_FLASH, DATA,
+			this->reg_offset.f34_data02),
+			FLASH_CONTROL_WRITE_CONFIGURATION_BLOCK);
+	if (rc) {
+		dev_err(&this->pdev->dev,
+			"%s: flash error\n", __func__);
+		clearpad_undo_prepared_interrupt(this,
+			&this->interrupt.for_F34,
+			"F34_FLASH_DATA02 for write pca");
+		goto end;
+	}
+
+	UNLOCK(&this->lock);
+	rc = clearpad_wait_for_interrupt(this, &this->interrupt.for_F34,
+						this->interrupt.wait_ms);
+	if (rc)
+		HWLOGE(this, "wait for interrupt status failed %d\n", rc);
+	LOCK(&this->lock);
+
+err_exit_bl:
+	/* exit bootloader mode */
+	clearpad_reset(this, SYN_SWRESET, __func__);
+
+	UNLOCK(&this->lock);
+	rc = clearpad_wait_for_interrupt(this, &this->interrupt.for_reset,
+						this->interrupt.wait_ms);
+	if (rc)
+		HWLOGE(this, "wait for interrupt status failed %d\n", rc);
+	LOCK(&this->lock);
+end:
+	return rc;
+}
+
+/* for Bootloader v7.x */
+/* need LOCK(&this->lock) */
+static int clearpad_write_pca_block_bl_v7_x(struct clearpad_t *this,
 				  u16 block_num, u8 *data)
 {
 	int rc;
@@ -8468,16 +8889,9 @@ static int clearpad_write_pca_block(struct clearpad_t *this,
 		FLASH_CMD_ENTER_BOOTLOADER};
 	u16 payload_len = SYN_PAYLOAD_LENGTH;
 
-	if (this->device_info.boot_loader_version_major <
-	    clearpad_bootloader_version_dec[BV7]) {
-		rc = -ENODEV;
-		HWLOGE(this, "illegal boot loader revision %x\n",
-			    this->device_info.boot_loader_version_major);
-		goto end;
-	}
-
 	/* change to bootloader mode start */
 	this->flash.enter_bootloader_mode = true;
+
 	/* read flash program key */
 	rc = clearpad_get_block(
 		SYNF(this, F34_FLASH, QUERY, this->reg_offset.f34_query01),
@@ -8488,7 +8902,7 @@ static int clearpad_write_pca_block(struct clearpad_t *this,
 	}
 
 	clearpad_prepare_for_interrupt(this, &this->interrupt.for_F34,
-				       "F34_FLASH_DATA04 for write pca");
+				       "F34_FLASH_DATA01 for write pca");
 
 	/* issue command to enter bootloader mode with key*/
 	/* F34_FLASH_DATA01: Partition ID
@@ -8505,7 +8919,7 @@ static int clearpad_write_pca_block(struct clearpad_t *this,
 		HWLOGE(this, "set bl mode error\n");
 		clearpad_undo_prepared_interrupt(this,
 			&this->interrupt.for_F34,
-			"F34_FLASH_DATA04 for write pca");
+			"F34_FLASH_DATA01 for write pca");
 		goto end;
 	}
 
@@ -8614,6 +9028,21 @@ err_exit_bl:
 		HWLOGE(this, "wait for interrupt status failed %d\n", rc);
 	LOCK(&this->lock);
 end:
+	return rc;
+}
+
+/* need LOCK(&this->lock) */
+static int clearpad_write_pca_block(struct clearpad_t *this,
+				  u16 block_num, u8 *data)
+{
+	int rc;
+
+	if (this->is_sol)
+		rc = clearpad_write_pca_block_bl_v6_0(this, block_num, data);
+	else
+		rc = clearpad_write_pca_block_bl_v7_x(this, block_num, data);
+	if (rc)
+		HWLOGE(this, "failed pca write rc = %d\n", rc);
 	return rc;
 }
 
@@ -9022,10 +9451,25 @@ static void clearpad_post_probe_work(struct work_struct *work)
 			HWLOGW(this, "fw flash failed but continue init\n");
 		}
 	}
+	if (this->chip_id == SYN_CHIP_3500) {
+		/* Remove this part after firmware flash sequence released */
+		/* @ Yoshino1.0 */
+		HWLOGW(this, "WA for Yoshino BU\n");
+		clearpad_reset(this, SYN_SWRESET, __func__);
 
-	this->state = SYN_STATE_RUNNING;
+		this->state = SYN_STATE_RUNNING;
 
-	UNLOCK(&this->lock);
+		UNLOCK(&this->lock);
+
+		rc = clearpad_wait_for_interrupt(this,
+			&this->interrupt.for_reset, this->interrupt.wait_ms);
+		if (rc)
+			LOGE(this, "failed to get interrupt (rc=%d)\n", rc);
+	} else {
+		this->state = SYN_STATE_RUNNING;
+
+		UNLOCK(&this->lock);
+	}
 
 	clearpad_ctrl_session_end(this, session);
 
