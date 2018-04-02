@@ -14,11 +14,6 @@
  * GNU General Public License for more details.
  *
  */
-/*
- * NOTE: This file has been modified by Sony Mobile Communications Inc.
- * Modifications are Copyright (c) 2016 Sony Mobile Communications Inc,
- * and licensed under the license of the file.
- */
 
 #ifndef _ION_PRIV_H
 #define _ION_PRIV_H
@@ -421,12 +416,11 @@ void ion_carveout_free(struct ion_heap *heap, ion_phys_addr_t addr,
  *			by a prefetch allocation
  * @high_items:		list of highmem items
  * @low_items:		list of lowmem items
- * @lock:		lock protecting this struct and especially the count
+ * @mutex:		lock protecting this struct and especially the count
  *			item list
  * @gfp_mask:		gfp_mask to use from alloc
  * @order:		order of pages in the pool
  * @list:		plist node for list of pools
- * @inode:		inode for ion_pool pseudo filesystem
  *
  * Allows you to keep a pool of pre allocated pages to use from your heap.
  * Keeping a pool of pages that is ready for dma, ie any cached mapping have
@@ -439,15 +433,13 @@ struct ion_page_pool {
 	int nr_unreserved;
 	struct list_head high_items;
 	struct list_head low_items;
-	spinlock_t lock;
+	struct mutex mutex;
 	gfp_t gfp_mask;
 	unsigned int order;
 	struct plist_node list;
-	struct inode *inode;
 };
 
-struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order,
-					bool movable);
+struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order);
 void ion_page_pool_destroy(struct ion_page_pool *);
 void *ion_page_pool_alloc(struct ion_page_pool *, bool *from_pool);
 void *ion_page_pool_alloc_pool_only(struct ion_page_pool *);

@@ -14,11 +14,6 @@
  * GNU General Public License for more details.
  *
  */
-/*
- * NOTE: This file has been modified by Sony Mobile Communications Inc.
- * Modifications are Copyright (c) 2017 Sony Mobile Communications Inc,
- * and licensed under the license of the file.
- */
 
 #include <asm/page.h>
 #include <linux/dma-mapping.h>
@@ -635,8 +630,7 @@ static void ion_system_heap_destroy_pools(struct ion_page_pool **pools)
  * nothing. If it succeeds you'll eventually need to use
  * ion_system_heap_destroy_pools to destroy the pools.
  */
-static int ion_system_heap_create_pools(struct ion_page_pool **pools,
-					bool movable)
+static int ion_system_heap_create_pools(struct ion_page_pool **pools)
 {
 	int i;
 	for (i = 0; i < num_orders; i++) {
@@ -645,7 +639,7 @@ static int ion_system_heap_create_pools(struct ion_page_pool **pools,
 
 		if (orders[i])
 			gfp_flags = high_order_gfp_flags;
-		pool = ion_page_pool_create(gfp_flags, orders[i], movable);
+		pool = ion_page_pool_create(gfp_flags, orders[i]);
 		if (!pool)
 			goto err_create_pool;
 		pools[i] = pool;
@@ -682,16 +676,15 @@ struct ion_heap *ion_system_heap_create(struct ion_platform_heap *unused)
 			heap->secure_pools[i] = kzalloc(pools_size, GFP_KERNEL);
 			if (!heap->secure_pools[i])
 				goto err_create_secure_pools;
-			if (ion_system_heap_create_pools(heap->secure_pools[i],
-							false))
+			if (ion_system_heap_create_pools(heap->secure_pools[i]))
 				goto err_create_secure_pools;
 		}
 	}
 
-	if (ion_system_heap_create_pools(heap->uncached_pools, false))
+	if (ion_system_heap_create_pools(heap->uncached_pools))
 		goto err_create_uncached_pools;
 
-	if (ion_system_heap_create_pools(heap->cached_pools, true))
+	if (ion_system_heap_create_pools(heap->cached_pools))
 		goto err_create_cached_pools;
 
 	heap->heap.debug_show = ion_system_heap_debug_show;
