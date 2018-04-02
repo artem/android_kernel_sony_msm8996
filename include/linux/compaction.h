@@ -22,9 +22,6 @@
 #define COMPACT_CONTENDED_LOCK	2
 
 #ifdef CONFIG_COMPACTION
-extern int PageMovable(struct page *page);
-extern void __SetPageMovable(struct page *page, struct address_space *mapping);
-extern void __ClearPageMovable(struct page *page);
 extern int sysctl_compact_memory;
 extern int sysctl_compaction_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos);
@@ -115,20 +112,6 @@ static inline unsigned long try_to_compact_pages(struct zonelist *zonelist,
 	return COMPACT_CONTINUE;
 }
 
-static inline int PageMovable(struct page *page)
-{
-	return 0;
-}
-static inline void __SetPageMovable(struct page *page,
-			struct address_space *mapping)
-{
-}
-
-static inline void __ClearPageMovable(struct page *page)
-{
-}
-
-
 static inline void compact_pgdat(pg_data_t *pgdat, int order)
 {
 }
@@ -155,7 +138,6 @@ static inline bool compaction_deferred(struct zone *zone, int order)
 #endif /* CONFIG_COMPACTION */
 
 #if defined(CONFIG_COMPACTION) && defined(CONFIG_SYSFS) && defined(CONFIG_NUMA)
-struct node;
 extern int compaction_register_node(struct node *node);
 extern void compaction_unregister_node(struct node *node);
 

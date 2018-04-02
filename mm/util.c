@@ -304,14 +304,10 @@ struct address_space *page_mapping(struct page *page)
 		swp_entry_t entry;
 
 		entry.val = page_private(page);
-		return swap_address_space(entry);
-	}
-
-	mapping = page->mapping;
-	if ((unsigned long)mapping & PAGE_MAPPING_ANON)
-		return NULL;
-
-	return (void *)((unsigned long)mapping & ~PAGE_MAPPING_FLAGS);
+		mapping = swap_address_space(entry);
+	} else if ((unsigned long)mapping & PAGE_MAPPING_ANON)
+		mapping = NULL;
+	return mapping;
 }
 EXPORT_SYMBOL(page_mapping);
 
