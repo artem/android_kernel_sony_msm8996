@@ -15,12 +15,7 @@
  * GNU General Public License for more details.
  *
  */
-/*
- * NOTE: This file has been modified by Sony Mobile Communications Inc.
- * Modifications are Copyright (c) 2016 Sony Mobile Communications Inc,
- * and licensed under the license of the file.
- */
-#include <linux/atomic.h>
+
 #include <linux/atomic.h>
 #include <linux/err.h>
 #include <linux/file.h>
@@ -480,7 +475,6 @@ static int user_ion_handle_put_nolock(struct ion_handle *handle)
 
 	return ret;
 }
-
 
 static struct ion_handle *ion_handle_lookup(struct ion_client *client,
 					    struct ion_buffer *buffer)
