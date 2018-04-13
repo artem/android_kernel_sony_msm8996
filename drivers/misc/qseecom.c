@@ -8615,10 +8615,6 @@ static int qseecom_probe(struct platform_device *pdev)
 	pr_warn("qseecom.whitelist_support = %d\n",
 				qseecom.whitelist_support);
 
-	qseecom.whitelist_support = qseecom_check_whitelist_feature();
-	pr_warn("qseecom.whitelist_support = %d\n",
-				qseecom.whitelist_support);
-
 	if (!qseecom.qsee_perf_client)
 		pr_err("Unable to register bus client\n");
 
