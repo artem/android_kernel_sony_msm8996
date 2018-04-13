@@ -8,11 +8,6 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-/*
- * NOTE: This file has been modified by Sony Mobile Communications Inc.
- * Modifications are Copyright (c) 2016 Sony Mobile Communications Inc,
- * and licensed under the license of the file.
- */
 
 #include <linux/cpu.h>
 #include <linux/cpufreq.h>
@@ -74,8 +69,8 @@ static int cpufreq_stats_update(unsigned int cpu)
 	struct all_cpufreq_stats *all_stat;
 	unsigned long long cur_time;
 
-	spin_lock(&cpufreq_stats_lock);
 	cur_time = get_jiffies_64();
+	spin_lock(&cpufreq_stats_lock);
 	stat = per_cpu(cpufreq_stats_table, cpu);
 	all_stat = per_cpu(all_cpufreq_stats, cpu);
 	if (!stat) {
@@ -83,14 +78,11 @@ static int cpufreq_stats_update(unsigned int cpu)
 		return 0;
 	}
 	if (stat->time_in_state) {
-		u64 delta = 0;
-
-		if (time_after64((u64)cur_time, (u64)stat->last_time))
-			delta = cur_time - stat->last_time;
-
-		stat->time_in_state[stat->last_index] += delta;
+		stat->time_in_state[stat->last_index] +=
+			cur_time - stat->last_time;
 		if (all_stat)
-			all_stat->time_in_state[stat->last_index] += delta;
+			all_stat->time_in_state[stat->last_index] +=
+					cur_time - stat->last_time;
 	}
 	stat->last_time = cur_time;
 	spin_unlock(&cpufreq_stats_lock);
