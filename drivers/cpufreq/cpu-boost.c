@@ -24,6 +24,8 @@
 #include <linux/input.h>
 #include <linux/time.h>
 
+#include <linux/sched/rt.h>
+
 struct cpu_sync {
 	int cpu;
 	unsigned int input_boost_min;
@@ -226,8 +228,7 @@ static void do_input_boost(struct kthread_work *work)
 			sched_boost_active = true;
 	}
 
-	queue_delayed_work(system_power_efficient_wq,
-		&input_boost_rem, msecs_to_jiffies(input_boost_ms));
+	schedule_delayed_work(&input_boost_rem, msecs_to_jiffies(input_boost_ms));
 }
 
 static void cpuboost_input_event(struct input_handle *handle,
