@@ -1,7 +1,7 @@
 /*
  * Broadcom Dongle Host Driver (DHD), common DHD core.
  *
- * Copyright (C) 1999-2017, Broadcom Corporation
+ * Copyright (C) 1999-2018, Broadcom Corporation
  * Copyright (C) 2016 Sony Mobile Communications Inc.
  * 
  *      Unless you and Broadcom execute a separate written software license
