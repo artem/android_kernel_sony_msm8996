@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver
  *
- * Copyright (C) 1999-2017, Broadcom Corporation
+ * Copyright (C) 1999-2018, Broadcom Corporation
  * Copyright (C) 2016 Sony Mobile Communications Inc.
  * 
  *      Unless you and Broadcom execute a separate written software license
@@ -25,7 +25,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wl_cfg80211.h 641057 2016-06-01 02:27:54Z $
+ * $Id: wl_cfg80211.h 751085 2018-03-09 08:17:42Z $
  */
 
 /**
@@ -406,12 +406,12 @@ struct net_info {
 };
 
 /* association inform */
-#define MAX_REQ_LINE 1024
+#define MAX_REQ_LINE 1024u
 struct wl_connect_info {
 	u8 req_ie[MAX_REQ_LINE];
-	s32 req_ie_len;
+	u32 req_ie_len;
 	u8 resp_ie[MAX_REQ_LINE];
-	s32 resp_ie_len;
+	u32 resp_ie_len;
 };
 
 /* firmware /nvram downloading controller */
